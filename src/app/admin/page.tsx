@@ -1,7 +1,6 @@
-// src/app/admin/page.tsx
 import { checkAdminAccess } from "@/lib/admin";
 import { redirect } from "next/navigation";
-import AdminDashboardClient from "@/components/AdminDashboardClient"; // Import atualizado
+import AdminDashboardClient from "./dashboard/AdminDashboardClient";
 
 export default async function AdminPage() {
   const admin = await checkAdminAccess();
@@ -16,7 +15,6 @@ export default async function AdminPage() {
           {">"}_ GERENCIAMENTO DE SISTEMA
         </h1>
       </header>
-
       <AdminDashboardClient adminEmails={adminEmails} />
     </main>
   );

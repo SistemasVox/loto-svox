@@ -1,67 +1,42 @@
+// src/app/api/admin/approve/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkAdminAccess } from "@/lib/admin";
 
-/**
- * POST: Processa a decisão do administrador sobre uma solicitação de plano.
- * Implementa transação atômica para garantir a integridade dos dados entre tabelas.
- */
 export async function POST(req: Request) {
   try {
-    // 1. Validação de Segurança (Camada de Servidor)
     const administrador = await checkAdminAccess();
-    if (!administrador) {
-      return NextResponse.json(
-        { erro: "Acesso negado: Privilégios de administrador requeridos." },
-        { status: 403 }
-      );
-    }
+    if (!administrador) return NextResponse.json({ erro: "Acesso negado" }, { status: 403 });
 
-    const corpo = await req.json();
-    const { userId, acao } = corpo; // acao: 'aprovar' | 'rejeitar'
+    const { userId, acao } = await req.json(); // acao: 'aprovar' | 'rejeitar'
 
-    if (!userId || !acao) {
-      return NextResponse.json(
-        { erro: "Parâmetros 'userId' e 'acao' são obrigatórios." },
-        { status: 400 }
-      );
-    }
-
-    // 2. Localização do pedido pendente
     const usuarioAlvo = await prisma.user.findUnique({
       where: { id: userId },
       select: { email: true, plano_solicitado: true }
     });
 
-    if (!usuarioAlvo || !usuarioAlvo.plano_solicitado) {
-      return NextResponse.json(
-        { erro: "Nenhuma solicitação pendente encontrada para este ID." },
-        { status: 404 }
-      );
+    if (!usuarioAlvo?.plano_solicitado) {
+      return NextResponse.json({ erro: "Nenhuma solicitação pendente." }, { status: 404 });
     }
 
-    // 3. Processamento de Rejeição
     if (acao === "rejeitar") {
       await prisma.user.update({
         where: { id: userId },
-        data: {
-          plano_solicitado: null,
-          data_solicitacao: null,
-        },
+        data: { plano_solicitado: null, data_solicitacao: null },
       });
-      return NextResponse.json({ msg: "Solicitação rejeitada com sucesso." });
+      return NextResponse.json({ msg: "Solicitação rejeitada." });
     }
 
-    // 4. Processamento de Aprovação (Transação Atômica)
+    // LÓGICA DE APROVAÇÃO E VALIDADE
     if (acao === "aprovar") {
-      // Cálculo de validade (30 dias padrão)
       const dataExpiracao = new Date();
-      dataExpiracao.setDate(dataExpiracao.getDate() + 30);
+      dataExpiracao.setDate(dataExpiracao.getDate() + 30); // Define 30 dias de validade
 
       await prisma.$transaction([
-        // A. Atualiza ou cria a assinatura ativa
+        // 1. Atualiza ou cria a assinatura ativa
         prisma.subscription.upsert({
           where: { 
+            // Procura assinatura existente para atualizar ou cria com ID 0 (novo)
             id: (await prisma.subscription.findFirst({ where: { userId } }))?.id || 0 
           },
           update: {
@@ -77,37 +52,24 @@ export async function POST(req: Request) {
           },
         }),
         
-        // B. Cria notificação interna para o usuário
+        // 2. Notifica o utilizador
         prisma.notification.create({
           data: {
             userId: userId,
-            message: `✅ Seu plano ${usuarioAlvo.plano_solicitado} foi aprovado! Seus recursos já estão liberados.`,
-            link: "/perfil"
+            message: `✅ Seu plano ${usuarioAlvo.plano_solicitado} foi aprovado! Válido até ${dataExpiracao.toLocaleDateString()}.`,
           }
         }),
 
-        // C. Limpa o pedido no perfil do usuário
+        // 3. Limpa o pedido pendente
         prisma.user.update({
           where: { id: userId },
-          data: {
-            plano_solicitado: null,
-            data_solicitacao: null,
-          },
+          data: { plano_solicitado: null, data_solicitacao: null },
         }),
       ]);
 
-      return NextResponse.json({ 
-        msg: `Plano ${usuarioAlvo.plano_solicitado} aprovado e notificação enviada.` 
-      });
+      return NextResponse.json({ msg: "Plano aprovado por 30 dias." });
     }
-
-    return NextResponse.json({ erro: "Ação não reconhecida pelo sistema." }, { status: 400 });
-
   } catch (erro) {
-    console.error("[CRITICAL_APPROVE_API]", erro);
-    return NextResponse.json(
-      { erro: "Falha interna ao processar decisão de assinatura." },
-      { status: 500 }
-    );
+    return NextResponse.json({ erro: "Erro ao processar aprovação." }, { status: 500 });
   }
 }

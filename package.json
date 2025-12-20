@@ -50,7 +50,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
-    "@tailwindcss/postcss": "^4",
+    "@tailwindcss/postcss": "^4.1.18",
     "@types/bcryptjs": "^2.4.6",
     "@types/formidable": "^3.4.5",
     "@types/jsonwebtoken": "^9.0.9",
@@ -59,6 +59,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.3.3",
+    "postcss": "^8.5.6",
     "tailwindcss": "^4.1.10",
     "tailwindcss-animate": "^1.0.7",
     "ts-node": "^10.9.2",
