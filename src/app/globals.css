@@ -1,0 +1,119 @@
+/* =========================
+   Arquivo: globals.css
+   Padrão Monocromático + Destaques
+   ========================= */
+
+/* Tailwind e plugins */
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ===== Variáveis Globais ===== */
+
+:root {
+  /* Cores monocromáticas */
+  --background: #fff;
+  --foreground: #181818;
+  --card: #fff;
+  --card-foreground: #181818;
+  --popover: #fff;
+  --popover-foreground: #181818;
+
+  --primary: #181818;           /* Preto principal */
+  --primary-foreground: #fff;   /* Texto branco em botões pretos */
+  --secondary: #ececec;         /* Cinza claro */
+  --secondary-foreground: #181818; /* Texto preto no cinza */
+  --muted: #ededed;             /* Cinza médio */
+  --muted-foreground: #444;     /* Cinza escuro */
+  --border: #d1d5db;            /* Cinza para bordas */
+  --input: #f5f5f5;
+
+  /* Destaques alternativos */
+  --blue: #0063f7;
+  --orange: #fa9900;
+  --green: #25b324;
+}
+
+/* Modo escuro */
+.dark {
+  --background: #181818;
+  --foreground: #fff;
+  --card: #232323;
+  --card-foreground: #fff;
+  --popover: #232323;
+  --popover-foreground: #fff;
+
+  --primary: #fff;
+  --primary-foreground: #181818;
+  --secondary: #303030;
+  --secondary-foreground: #fff;
+  --muted: #232323;
+  --muted-foreground: #bebebe;
+  --border: #444;
+  --input: #232323;
+
+  --blue: #3b82f6;
+  --orange: #f59e42;
+  --green: #22c55e;
+}
+
+/* Tailwind base */
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: var(--ring); /* ou a variável correta */
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
+
+/* Marca d'água (opcional) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: url('/logo1.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: .10;   /* Pode ajustar aqui */
+  z-index: -1;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.6s ease-out forwards;
+}
+
+.animate-card {
+  animation: fadeIn 0.6s ease-out forwards;
+  opacity: 0;
+}
+
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeInOut {
+  0% { opacity: 0; transform: translateY(-10px); }
+  10% { opacity: 1; transform: translateY(0); }
+  90% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-fadeInOut {
+  animation: fadeInOut 3s forwards;
+}

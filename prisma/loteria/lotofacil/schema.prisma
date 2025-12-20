@@ -1,0 +1,25 @@
+// ARQUIVO: prisma/loteria/lotofacil/schema.prisma
+
+generator client {
+  provider        = "prisma-client-js"
+  // Move o cliente para dentro de node_modules para isolamento total
+  output          = "../../../node_modules/@prisma/client-lotofacil"
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
+  previewFeatures = ["nativeDistinct"]
+}
+
+datasource db {
+  provider = "sqlite"
+  // Usa a variável de ambiente que configuramos com caminho absoluto
+  url      = env("LOTERIA_DATABASE_URL")
+}
+
+model Loto {
+  data_concurso String @map("data_concurso")
+  concurso      Int    @id @map("concurso")
+  dezenas       String @map("dezenas")
+
+  @@index([concurso], map: "idx_loto_concurso")
+  @@index([data_concurso], map: "idx_loto_data")
+  @@map("loto")
+}

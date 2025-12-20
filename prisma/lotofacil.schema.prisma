@@ -1,0 +1,16 @@
+generator client {
+  provider = "prisma-client-js"
+  // Move este cliente para uma pasta própria
+  output   = "../node_modules/@prisma/client-lotofacil"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("LOTERIA_DATABASE_URL")
+}
+
+model Loto {
+  concurso      Int      @id
+  data_concurso String
+  dezenas       String
+}

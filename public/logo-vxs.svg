@@ -1,0 +1,78 @@
+<!-- =====================================================
+     File: /public/logo-vxs.svg
+     Descrição: Ícone “VX$” com cores originais (azul-néon,
+     laranja queimado e verde-néon) + glow em SVG válido.
+     ===================================================== -->
+
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="600" height="250"
+     viewBox="0 0 600 250">
+
+    <!-- === GRADIENTES & FILTROS === -->
+    <defs>
+        <!-- Metal escuro (V) -->
+        <linearGradient id="gradMetalDark" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#27282d"/>
+            <stop offset="100%" stop-color="#34363c"/>
+        </linearGradient>
+
+        <!-- Laranja vibrante (X) -->
+        <linearGradient id="gradOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#ffb347"/>
+            <stop offset="100%" stop-color="#ff6d00"/>
+        </linearGradient>
+
+        <!-- Verde néon ($) -->
+        <linearGradient id="gradGreenNeon" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%"   stop-color="#00ff9a"/>
+            <stop offset="100%" stop-color="#00c853"/>
+        </linearGradient>
+
+        <!-- Glow azul -->
+        <filter id="glowBlue" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="5" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+
+        <!-- Glow verde -->
+        <filter id="glowGreen" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="5" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        </filter>
+    </defs>
+
+    <!-- === LETRA V === -->
+    <text x="30"  y="170"
+          font-family="Montserrat, sans-serif"
+          font-size="160" font-weight="900"
+          fill="url(#gradMetalDark)"
+          stroke="#007bff" stroke-width="6"
+          filter="url(#glowBlue)">
+        V
+    </text>
+
+    <!-- === LETRA X === -->
+    <text x="185" y="170"
+          font-family="Montserrat, sans-serif"
+          font-size="160" font-weight="900"
+          fill="url(#gradOrange)"
+          stroke="#ff6d00" stroke-width="6">
+        X
+    </text>
+
+    <!-- === SÍMBOLO $ === -->
+    <text x="350" y="170"
+          font-family="Montserrat, sans-serif"
+          font-size="160" font-weight="900"
+          fill="url(#gradGreenNeon)"
+          stroke="#00ff6f" stroke-width="6"
+          filter="url(#glowGreen)">
+        $
+    </text>
+</svg>
