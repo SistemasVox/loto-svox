@@ -1,39 +1,38 @@
-// src/app/loto-crud/page.tsx
+/* =============================================================================
+ * ARQUIVO: src/app/loto-crud/page.tsx
+ * REFATORAÇÃO: Implementação de Paginação (20 por vez) e Infinite Scroll.
+ * ============================================================================= */
 
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import LotoCrudComponent, { LotoCrudProps } from "./LotoCrudComponent";
 
-// ——— Service functions inline ———
+const LIMIT = 20;
+
 const fetchJson = (url: string, opts: RequestInit = {}) =>
   fetch(url, { credentials: "include", ...opts }).then((r) => r.json());
 
-async function fetchSession() {
-  return fetchJson("/api/auth/session");
-}
-async function fetchLotoRecords() {
-  return fetchJson("/api/loto");
+async function fetchSession() { return fetchJson("/api/auth/session"); }
+async function fetchLotoRecords(page: number) { 
+  return fetchJson(`/api/loto?page=${page}&limit=${LIMIT}`); 
 }
 async function createLotoRecord(data: any) {
   return fetchJson("/api/loto", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
 }
 async function updateLotoRecord(data: any) {
   return fetchJson("/api/loto", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    method: "PUT", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
 }
 async function deleteLotoRecord(concurso: number) {
   return fetchJson("/api/loto", {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
+    method: "DELETE", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ concurso }),
   });
 }
@@ -41,7 +40,6 @@ async function updateExternalDb() {
   return fetchJson("/api/loto/atualizar", { method: "POST" });
 }
 
-// util pra converter “YYYY-MM-DD” → Date
 function parseDateLocal(ds: string): Date {
   const [y, m, d] = ds.split("-").map((v) => parseInt(v, 10));
   return new Date(y, m - 1, d);
@@ -49,11 +47,24 @@ function parseDateLocal(ds: string): Date {
 
 export default function LotoCrudPage() {
   const router = useRouter();
-
-  // — Auth guard —  
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
+  // --- Estados CRUD ---  
+  const [registros, setRegistros] = useState<any[]>([]);
+  const [form, setForm] = useState({ data_concurso: "", concurso: "", dezenas: "" });
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [message, setMessage] = useState("");
+  const [errorDezenas, setErrorDezenas] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // --- Estados Paginação ---
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const isFetching = useRef(false);
+
+  // Auth Guard
   useEffect(() => {
     fetchSession()
       .then((data) => {
@@ -65,23 +76,33 @@ export default function LotoCrudPage() {
       .finally(() => setAuthLoading(false));
   }, [router]);
 
-  // — Estados CRUD —  
-  const [registros, setRegistros] = useState<any[]>([]);
-  const [form, setForm] = useState({ data_concurso: "", concurso: "", dezenas: "" });
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [message, setMessage] = useState("");
-  const [errorDezenas, setErrorDezenas] = useState("");
-  const [loading, setLoading] = useState(false);
+  /* CARREGAMENTO PAGINADO: Estabilizado via useCallback */
+  const loadMore = useCallback(async (pageToFetch: number, reset: boolean = false) => {
+    if (isFetching.current || (!hasMore && !reset)) return;
+    
+    isFetching.current = true;
+    setLoading(true);
+    try {
+      const data = await fetchLotoRecords(pageToFetch);
+      if (Array.isArray(data)) {
+        setRegistros(prev => reset ? data : [...prev, ...data]);
+        setHasMore(data.length === LIMIT);
+      }
+    } catch (err) {
+      setMessage("❌ Erro ao carregar registros");
+    } finally {
+      setLoading(false);
+      isFetching.current = false;
+    }
+  }, [hasMore]);
 
-  // carrega registros após auth
+  // Efeito inicial
   useEffect(() => {
     if (!authLoading && user) {
-      fetchLotoRecords().then(setRegistros).catch(() => setMessage("❌ Erro ao carregar registros"));
+      loadMore(1, true);
     }
-  }, [authLoading, user]);
+  }, [authLoading, user, loadMore]);
 
-  // handlers
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (name === "dezenas") {
@@ -100,7 +121,14 @@ export default function LotoCrudPage() {
 
   const handleDateChange = (date: Date | null) => {
     setStartDate(date);
-    setForm({ ...form, data_concurso: date ? date.toISOString().slice(0, 10) : "" });
+    if (date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      setForm({ ...form, data_concurso: `${y}-${m}-${d}` });
+    } else {
+      setForm({ ...form, data_concurso: "" });
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -110,27 +138,28 @@ export default function LotoCrudPage() {
       setErrorDezenas("Preencha exatamente 15 dezenas.");
       return;
     }
-    setErrorDezenas("");
     setLoading(true);
 
     const fn = isEditing ? updateLotoRecord : createLotoRecord;
-    const payload = { ...form, dezenas: pairs.join(",") };
-    const res = await fn(payload).catch(() => ({ error: true }));
+    const res = await fn(form).catch(() => ({ error: true }));
 
     setMessage(res.error ? "❌ Falha ao salvar" : isEditing ? "✅ Atualizado!" : "✅ Criado!");
     if (!res.error) {
       setForm({ data_concurso: "", concurso: "", dezenas: "" });
       setStartDate(null);
       setIsEditing(false);
-      fetchLotoRecords().then(setRegistros);
+      // Resetar para página 1 após salvar para refletir mudanças
+      setPage(1);
+      loadMore(1, true);
     }
     setLoading(false);
     setTimeout(() => setMessage(""), 3000);
   };
 
   const handleEdit = (reg: any) => {
-    setForm({ data_concurso: reg.data_concurso.slice(0, 10), concurso: String(reg.concurso), dezenas: reg.dezenas });
-    setStartDate(parseDateLocal(reg.data_concurso));
+    const cleanDate = reg.data_concurso.split("T")[0];
+    setForm({ data_concurso: cleanDate, concurso: String(reg.concurso), dezenas: reg.dezenas });
+    setStartDate(parseDateLocal(cleanDate));
     setIsEditing(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -140,7 +169,10 @@ export default function LotoCrudPage() {
     setLoading(true);
     const res = await deleteLotoRecord(concurso).catch(() => ({ error: true }));
     setMessage(res.error ? "❌ Falha ao excluir" : "✅ Excluído!");
-    if (!res.error) fetchLotoRecords().then(setRegistros);
+    if (!res.error) {
+      setPage(1);
+      loadMore(1, true);
+    }
     setLoading(false);
     setTimeout(() => setMessage(""), 3000);
   };
@@ -149,7 +181,10 @@ export default function LotoCrudPage() {
     setLoading(true);
     const res = await updateExternalDb().catch(() => ({ error: true }));
     setMessage(res.error ? "❌ Erro ao atualizar banco" : `✅ ${res.mensagem}`);
-    if (!res.error) fetchLotoRecords().then(setRegistros);
+    if (!res.error) {
+      setPage(1);
+      loadMore(1, true);
+    }
     setLoading(false);
     setTimeout(() => setMessage(""), 5000);
   };
@@ -158,30 +193,38 @@ export default function LotoCrudPage() {
     setForm({ data_concurso: "", concurso: "", dezenas: "" });
     setStartDate(null);
     setIsEditing(false);
-    setErrorDezenas("");
   };
 
-  // guard render
-  if (authLoading) return <div className="flex items-center justify-center h-screen">Carregando…</div>;
+  /* HANDLER DO SCROLL: Acionado pelo componente de apresentação */
+  const handleScrollThreshold = () => {
+    if (!loading && hasMore) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      loadMore(nextPage);
+    }
+  };
+
+  if (authLoading) return <div className="flex items-center justify-center h-screen bg-black text-white">Carregando…</div>;
   if (!user) return null;
 
-  // props pro componente de apresentação
-  const props: LotoCrudProps = {
-    loading,
-    message,
-    registros,
-    form,
-    startDate,
-    isEditing,
-    errorDezenas,
-    onDateChange: handleDateChange,
-    onInputChange: handleInputChange,
-    onSave: handleSave,
-    onEdit: handleEdit,
-    onDelete: handleDelete,
-    onUpdateDb: handleUpdateDb,
-    onCancelEdit: handleCancelEdit,
-  };
-
-  return <LotoCrudComponent {...props} />;
+  return (
+    <LotoCrudComponent 
+      loading={loading}
+      message={message}
+      registros={registros}
+      form={form}
+      startDate={startDate}
+      isEditing={isEditing}
+      errorDezenas={errorDezenas}
+      onDateChange={handleDateChange}
+      onInputChange={handleInputChange}
+      onSave={handleSave}
+      onEdit={handleEdit}
+      onDelete={handleDelete}
+      onUpdateDb={handleUpdateDb}
+      onCancelEdit={handleCancelEdit}
+      hasMore={hasMore}
+      onLoadMore={handleScrollThreshold}
+    />
+  );
 }
