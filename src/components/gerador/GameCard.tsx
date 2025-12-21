@@ -1,29 +1,21 @@
 /* =============================================================================
  * ARQUIVO: src/components/gerador/GameCard.tsx
- * DESCRIÇÃO: Card para exibir combinação gerada e permitir salvar como aposta (Bet)
+ * DESCRIÇÃO: Card de jogo com funcionalidade de "Click-to-Copy" (3x5) e Salvar.
  * ============================================================================= */
 
-import React from 'react'
+import React, { useState } from 'react'
 import { GeneratedGame, GeneratorType } from '@/types/generator'
-import { FaDice, FaStar, FaGem, FaCrown, FaBookmark, FaSpinner } from 'react-icons/fa'
+import { FaDice, FaStar, FaGem, FaCrown, FaBookmark, FaSpinner, FaCheck } from 'react-icons/fa'
 
-/* =============================================================================
- * INTERFACE: GameCardProps
- * Props do componente GameCard
- * ============================================================================= */
 interface GameCardProps {
-  game: GeneratedGame               // combinação gerada
-  type: GeneratorType               // tipo de gerador (free, basic, plus, premium)
-  index: number                     // índice do jogo na lista (usado como gameId)
-  onSaveGame: (numbers: number[], gameId: number) => void  // callback para salvar aposta
-  saving: boolean                   // estado de salvamento em andamento
-  savedGamesRemaining: number       // quantos salvos ainda pode fazer
+  game: GeneratedGame
+  type: GeneratorType
+  index: number
+  onSaveGame: (numbers: number[], gameId: number) => void
+  saving: boolean
+  savedGamesRemaining: number
 }
 
-/* =============================================================================
- * COMPONENTE: GameCard
- * Exibe os números da combinação e botão para salvar (Bet)
- * ============================================================================= */
 export default function GameCard({
   game,
   type,
@@ -32,10 +24,31 @@ export default function GameCard({
   saving,
   savedGamesRemaining,
 }: GameCardProps) {
-  // =============================================================================
-  // HANDLER: ao clicar em salvar
-  // =============================================================================
-  const handleSave = () => {
+  const [copied, setCopied] = useState(false)
+
+  // --- LÓGICA DE CÓPIA (PADRÃO 3x5) ---
+  const handleCopy = () => {
+    const numbers = [...game.numbers].sort((a, b) => a - b)
+    
+    // Formata em 3 linhas de 5 números cada
+    const lines = [
+      numbers.slice(0, 5).map(n => n.toString().padStart(2, '0')).join(' '),
+      numbers.slice(5, 10).map(n => n.toString().padStart(2, '0')).join(' '),
+      numbers.slice(10, 15).map(n => n.toString().padStart(2, '0')).join(' ')
+    ]
+    
+    const text = lines.join('\n')
+
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }).catch(err => {
+      console.error('Falha ao copiar jogo:', err)
+    })
+  }
+
+  const handleSave = (e: React.MouseEvent) => {
+    e.stopPropagation() // Impede que o clique no botão acione a cópia do card
     if (savedGamesRemaining <= 0) {
       alert("Você atingiu o limite de jogos salvos!")
       return
@@ -44,81 +57,73 @@ export default function GameCard({
     onSaveGame(game.numbers, index)
   }
 
-  // =============================================================================
-  // RENDERIZAÇÃO
-  // =============================================================================
   return (
-    <div className="p-4 rounded-lg shadow-md border border-[var(--border)] bg-[var(--card)] animate-fade-in relative">
-      {/* ----------------------------------------------------
-       * Cabeçalho: tipo e número do jogo
-       * ---------------------------------------------------- */}
+    <div 
+      onClick={handleCopy}
+      className={`p-4 rounded-xl shadow-xl border transition-all cursor-pointer active:scale-[0.98] animate-fade-in relative group ${
+        copied ? 'border-green-500 bg-green-50/50' : 'border-slate-200 bg-white hover:border-blue-300'
+      }`}
+    >
+      {/* Indicador Flutuante de Cópia */}
+      {copied && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-xl z-10 animate-in fade-in zoom-in duration-200">
+          <div className="flex items-center gap-2 text-green-600 font-bold uppercase text-xs tracking-widest">
+            <FaCheck /> Copiado_3x5
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-center gap-2">
-          <div className="text-xs font-medium flex items-center gap-1">
-            {type === 'free'    && <><FaDice    /> Gratuito</>}
-            {type === 'basic'   && <><FaStar    /> Básico</>}
-            {type === 'plus'    && <><FaGem     /> Plus</>}
-            {type === 'premium' && <><FaCrown   /> Prêmio</>}
+          <div className="text-xs font-bold flex items-center gap-1 text-slate-800">
+            {type === 'free'    && <><FaDice    className="text-blue-600" /> Gratuito</>}
+            {type === 'basic'   && <><FaStar    className="text-orange-500" /> Básico</>}
+            {type === 'plus'    && <><FaGem     className="text-emerald-600" /> Plus</>}
+            {type === 'premium' && <><FaCrown   className="text-purple-600" /> Prêmio</>}
           </div>
-          <div className="text-xs text-[var(--muted-foreground)]">
+          <div className="text-xs text-slate-500 font-medium italic">
             Jogo #{index + 1}
           </div>
         </div>
 
-        {/* ----------------------------------------------------
-         * Botão Salvar aposta
-         * ---------------------------------------------------- */}
         <button
           onClick={handleSave}
           disabled={saving || savedGamesRemaining <= 0}
-          title={
+          className={`p-2 rounded-lg transition-all z-20 ${
             saving
-              ? "Salvando..."
+              ? 'bg-slate-200 cursor-not-allowed'
               : savedGamesRemaining <= 0
-                ? "Limite de salvos atingido"
-                : "Salvar este jogo"
-          }
-          className={`p-2 rounded-md transition ${
-            saving
-              ? 'bg-gray-200 cursor-not-allowed'
-              : savedGamesRemaining <= 0
-                ? 'bg-gray-200 cursor-not-allowed text-gray-400'
-                : 'bg-blue-100 hover:bg-blue-200 text-blue-600'
+                ? 'bg-slate-100 cursor-not-allowed text-slate-300'
+                : 'bg-blue-50 hover:bg-blue-100 text-blue-600 shadow-sm border border-blue-200'
           }`}
         >
-          {saving
-            ? <FaSpinner className="animate-spin" />
-            : <FaBookmark />
-          }
+          {saving ? <FaSpinner className="animate-spin" /> : <FaBookmark />}
         </button>
       </div>
 
-      {/* ----------------------------------------------------
-       * Números da combinação
-       * ---------------------------------------------------- */}
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-5 gap-2 pointer-events-none">
         {game.numbers.map((num, idx) => (
           <div
             key={idx}
-            className="dezena-bola flex items-center justify-center"
+            className="dezena-bola flex items-center justify-center font-bold"
           >
             {num.toString().padStart(2, '0')}
           </div>
         ))}
       </div>
 
-      {/* ----------------------------------------------------
-       * Indicador de limite atingido
-       * ---------------------------------------------------- */}
       {savedGamesRemaining <= 0 && (
-        <div className="absolute top-2 right-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
+        <div className="absolute -top-2 -right-2 text-[10px] font-black bg-red-600 text-white px-2 py-0.5 rounded shadow-lg uppercase tracking-tighter">
           Limite: {savedGamesRemaining}
+        </div>
+      )}
+      
+      {/* Dica visual no hover */}
+      {!copied && (
+        <div className="mt-3 text-[9px] text-slate-400 uppercase font-bold tracking-tighter text-center opacity-0 group-hover:opacity-100 transition-opacity">
+          Clique no card para copiar padrão 3x5
         </div>
       )}
     </div>
   )
 }
-
-/* =============================================================================
- * FIM DO ARQUIVO
- * ============================================================================= */
