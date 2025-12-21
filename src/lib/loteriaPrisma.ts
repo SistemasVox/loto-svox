@@ -1,13 +1,12 @@
-import { PrismaClient } from '@prisma/client-lotofacil';
+// ======================================================================
+// ARQUIVO: src/lib/loteriaPrisma.ts (UNIFICADO)
+// DESCRIÇÃO: Redireciona para o cliente principal para evitar erros de build.
+// ======================================================================
 
-const globalParaLoteria = global as unknown as { loteriaPrisma?: PrismaClient };
+import { prisma } from "./prisma";
 
-export const loteriaPrisma =
-  globalParaLoteria.loteriaPrisma ??
-  new PrismaClient({
-    log: ['error'],
-  });
-
-if (process.env.NODE_ENV !== 'production') {
-  globalParaLoteria.loteriaPrisma = loteriaPrisma;
-}
+/**
+ * Agora que o banco foi unificado, exportamos a instância principal.
+ * Isso evita o erro "Module not found" nas rotas legadas.
+ */
+export const loteriaPrisma = prisma;

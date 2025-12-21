@@ -1,54 +1,54 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { loteriaPrisma } from "@/lib/loteriaPrisma";
-import { memoriaTrafego } from "@/lib/trafficMemory";
+import { checkAdminAccess } from "@/lib/admin";
+import { PLANOS_CONFIG } from "@/utils/constants";
+
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    // 1. Dados dos bancos (Lotofácil e Usuários)
-    const totalJogos = await loteriaPrisma.loto.count();
-    const [total, premium] = await Promise.all([
+    const admin = await checkAdminAccess();
+    if (!admin) return NextResponse.json({ error: "403" }, { status: 403 });
+
+    // 1. Consultas fundamentais
+    const [totalMembros, totalJogos, acessosAgora] = await Promise.all([
       prisma.user.count(),
-      prisma.subscription.count({ where: { plano: 'PREMIO' } })
+      prisma.loto.count(),
+      prisma.traffic.findMany({ 
+        take: 15, 
+        orderBy: { timestamp: 'desc' },
+        select: { email: true, ip: true, timestamp: true }
+      })
     ]);
 
-    // 2. Dados da Memória (Online)
-    const onlineMemoria = memoriaTrafego.obterTodos();
-    
-    const onlineDetails = await Promise.all(
-      onlineMemoria.map(async (acesso) => {
-        let identificador = "Visitante";
-        let role = "user";
+    // 2. Agregação por Nível de Plano (Resolvendo a nova demanda)
+    const distribuicaoPlanos = await prisma.subscription.groupBy({
+      by: ['plano'],
+      _count: { _all: true },
+      where: { status: 'ACTIVE' }
+    });
 
-        if (acesso.userId) {
-          const u = await prisma.user.findUnique({
-            where: { id: acesso.userId },
-            select: { email: true }
-          });
-          if (u) {
-            identificador = u.email;
-            if (u.email.includes('admin')) role = "admin";
-          }
-        }
+    // Formata o mapa de contagem (ex: { FREE: 10, BASICO: 5 })
+    const contagemPlanos = distribuicaoPlanos.reduce((acc: any, curr) => {
+      acc[curr.plano] = curr._count._all;
+      return acc;
+    }, {});
 
-        return {
-          id: identificador,
-          ip: acesso.ip,
-          role,
-          time: new Date(acesso.timestamp).toLocaleTimeString('pt-BR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })
-        };
-      })
-    );
+    const acessosFormatados = acessosAgora.map(t => ({
+      email: t.email || 'Visitante',
+      ip: t.ip,
+      lastActive: new Date(t.timestamp).toLocaleTimeString('pt-BR')
+    }));
 
     return NextResponse.json({
-      dbStats: { totalJogos, ultimaData: "Sincronizado" },
-      userStats: { total, premium, free: total - premium },
-      onlineDetails
+      totalMembros,
+      totalJogos,
+      membrosAtivos: distribuicaoPlanos.reduce((sum, item) => sum + item._count._all, 0),
+      contagemPlanos, // Dados para os badges de nível
+      acessosAgora: acessosFormatados,
+      planosDisponiveis: PLANOS_CONFIG.map(p => p.id)
     });
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
 }

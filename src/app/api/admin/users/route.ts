@@ -2,25 +2,25 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkAdminAccess } from "@/lib/admin";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  if (!(await checkAdminAccess())) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  const users = await prisma.user.findMany({
-    include: { subscriptions: { orderBy: { createdAt: 'desc' }, take: 1 } },
-    orderBy: { id: 'asc' }
-  });
-  return NextResponse.json(users);
-}
+  try {
+    const admin = await checkAdminAccess();
+    if (!admin) return NextResponse.json({ error: "403" }, { status: 403 });
 
-export async function PATCH(req: Request) {
-  if (!(await checkAdminAccess())) return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
-  const { userId, novoPlano } = await req.json();
-  const expiresAt = new Date();
-  expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+    const usuarios = await prisma.user.findMany({
+      include: {
+        subscriptions: {
+          take: 1,
+          orderBy: { createdAt: 'desc' }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    });
 
-  await prisma.subscription.upsert({
-    where: { id: (await prisma.subscription.findFirst({ where: { userId } }))?.id || 0 },
-    update: { plano: novoPlano, expiresAt, status: "ACTIVE" },
-    create: { userId, plano: novoPlano, expiresAt, status: "ACTIVE" }
-  });
-  return NextResponse.json({ success: true });
+    return NextResponse.json(usuarios);
+  } catch (error) {
+    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+  }
 }

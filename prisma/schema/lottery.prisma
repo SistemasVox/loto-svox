@@ -1,0 +1,49 @@
+enum Plano {
+  FREE
+  BASICO
+  PLUS
+  PREMIO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+}
+
+model Bet {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  concurso  Int
+  dezenas   String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([concurso])
+}
+
+model Subscription {
+  id        Int                @id @default(autoincrement())
+  userId    Int
+  plano     Plano              @default(FREE)
+  status    SubscriptionStatus @default(ACTIVE)
+  startedAt DateTime           @default(now())
+  expiresAt DateTime
+  updatedAt DateTime           @updatedAt
+  createdAt DateTime           @default(now())
+  user      User               @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+model TurboUsage {
+  id     Int    @id @default(autoincrement())
+  userId Int
+  count  Int    @default(0)
+  date   String
+  tab    String
+
+  @@unique([userId, date, tab])
+}

@@ -1,75 +1,102 @@
-// src/app/api/admin/approve/route.ts
+// ======================================================================
+// SISTEMA LOTO - APROVAÇÃO DE PROTOCOLOS (AUDITORIA PIX)
+// ======================================================================
+
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma"; // Singleton unificado
 import { checkAdminAccess } from "@/lib/admin";
+
+// --- CONSTANTES DE NEGÓCIO (ZERO MAGIC NUMBERS) ---
+const DIAS_VALIDADE_PLANO = 30;
+const STATUS_ATIVO = "ACTIVE";
+const SUCESSO_MSG = "Acesso liberado e notificação enviada.";
+const ERRO_PERMISSAO = "Acesso negado: Requer privilégios de Admin.";
+const ERRO_SOLICITACAO = "Nenhuma solicitação pendente para este usuário.";
 
 export async function POST(req: Request) {
   try {
+    // 1. Validação de Segurança (AdminRole no dev.db)
     const administrador = await checkAdminAccess();
-    if (!administrador) return NextResponse.json({ erro: "Acesso negado" }, { status: 403 });
+    if (!administrador) {
+      console.warn("[WARN] Tentativa de aprovação não autorizada.");
+      return NextResponse.json({ erro: ERRO_PERMISSAO }, { status: 403 });
+    }
 
-    const { userId, acao } = await req.json(); // acao: 'aprovar' | 'rejeitar'
+    // 2. Extração e Validação de Input
+    const { userId, acao } = await req.json();
+    if (!userId || !acao) {
+      return NextResponse.json({ erro: "Dados incompletos (userId/acao)." }, { status: 400 });
+    }
 
+    // 3. Verificação de Estado Inicial
     const usuarioAlvo = await prisma.user.findUnique({
       where: { id: userId },
       select: { email: true, plano_solicitado: true }
     });
 
     if (!usuarioAlvo?.plano_solicitado) {
-      return NextResponse.json({ erro: "Nenhuma solicitação pendente." }, { status: 404 });
+      return NextResponse.json({ erro: ERRO_SOLICITACAO }, { status: 404 });
     }
 
+    // 4. Lógica de Rejeição (Limpeza de rastro)
     if (acao === "rejeitar") {
       await prisma.user.update({
         where: { id: userId },
         data: { plano_solicitado: null, data_solicitacao: null },
       });
-      return NextResponse.json({ msg: "Solicitação rejeitada." });
+      console.info(`[INFO] Solicitação do usuário ${userId} rejeitada.`);
+      return NextResponse.json({ msg: "Solicitação removida do sistema." });
     }
 
-    // LÓGICA DE APROVAÇÃO E VALIDADE
-    if (acao === "aprovar") {
-      const dataExpiracao = new Date();
-      dataExpiracao.setDate(dataExpiracao.getDate() + 30); // Define 30 dias de validade
+    // 5. Cálculo de Vigência
+    const dataExpiracao = new Date();
+    dataExpiracao.setDate(dataExpiracao.getDate() + DIAS_VALIDADE_PLANO);
 
-      await prisma.$transaction([
-        // 1. Atualiza ou cria a assinatura ativa
-        prisma.subscription.upsert({
-          where: { 
-            // Procura assinatura existente para atualizar ou cria com ID 0 (novo)
-            id: (await prisma.subscription.findFirst({ where: { userId } }))?.id || 0 
-          },
-          update: {
-            plano: usuarioAlvo.plano_solicitado as any,
-            status: "ACTIVE",
-            expiresAt: dataExpiracao,
-          },
-          create: {
-            userId: userId,
-            plano: usuarioAlvo.plano_solicitado as any,
-            status: "ACTIVE",
-            expiresAt: dataExpiracao,
-          },
-        }),
-        
-        // 2. Notifica o utilizador
-        prisma.notification.create({
-          data: {
-            userId: userId,
-            message: `✅ Seu plano ${usuarioAlvo.plano_solicitado} foi aprovado! Válido até ${dataExpiracao.toLocaleDateString()}.`,
+    // 6. Transação Atômica: Assinatura + Notificação + Limpeza
+    await prisma.$transaction(async (tx) => {
+      // Upsert manual para SQLite (Garante 1 assinatura por usuário)
+      const subExistente = await tx.subscription.findFirst({ where: { userId } });
+
+      if (subExistente) {
+        await tx.subscription.update({
+          where: { id: subExistente.id },
+          data: { 
+            plano: usuarioAlvo.plano_solicitado as any, 
+            status: STATUS_ATIVO, 
+            expiresAt: dataExpiracao 
           }
-        }),
+        });
+      } else {
+        await tx.subscription.create({
+          data: { 
+            userId, 
+            plano: usuarioAlvo.plano_solicitado as any, 
+            status: STATUS_ATIVO, 
+            expiresAt: dataExpiracao 
+          }
+        });
+      }
 
-        // 3. Limpa o pedido pendente
-        prisma.user.update({
-          where: { id: userId },
-          data: { plano_solicitado: null, data_solicitacao: null },
-        }),
-      ]);
+      // Registro de Notificação Interna
+      await tx.notification.create({
+        data: {
+          userId,
+          message: `✅ Protocolo ${usuarioAlvo.plano_solicitado} Ativado! Expira em: ${dataExpiracao.toLocaleDateString('pt-BR')}.`
+        }
+      });
 
-      return NextResponse.json({ msg: "Plano aprovado por 30 dias." });
-    }
-  } catch (erro) {
-    return NextResponse.json({ erro: "Erro ao processar aprovação." }, { status: 500 });
+      // Finalização do fluxo no perfil do usuário
+      await tx.user.update({
+        where: { id: userId },
+        data: { plano_solicitado: null, data_solicitacao: null }
+      });
+    });
+
+    console.info(`[INFO] Plano ${usuarioAlvo.plano_solicitado} aprovado para: ${usuarioAlvo.email}`);
+    return NextResponse.json({ msg: SUCESSO_MSG });
+
+  } catch (erro: any) {
+    console.error("[CRITICAL] Erro na transação de aprovação:", erro.message);
+    return NextResponse.json({ erro: "Falha interna na persistência do plano." }, { status: 500 });
   }
 }

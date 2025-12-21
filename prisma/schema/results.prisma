@@ -1,0 +1,9 @@
+model Loto {
+  id            Int      @id @default(autoincrement())
+  concurso      Int      @unique
+  data_concurso String?
+  dezenas       String
+  createdAt     DateTime @default(now())
+
+  @@index([concurso])
+}

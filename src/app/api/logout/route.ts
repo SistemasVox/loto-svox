@@ -1,17 +1,23 @@
-// src/app/api/logout/route.ts
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from "next/server";
 
-export const dynamic = 'force-dynamic'
-export const runtime = 'edge'
+export const dynamic = "force-dynamic";
 
-export async function POST(request: NextRequest) {
-  const res = NextResponse.json({ ok: true })
-  res.cookies.set('token', '', {
-    httpOnly: true,
-    path: '/',
-    expires: new Date(0),
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-  })
-  return res
+export async function POST() {
+  try {
+    const resposta = NextResponse.json({ ok: true });
+    
+    // Limpeza de cookie padrão
+    resposta.cookies.set("token", "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      expires: new Date(0), // Data no passado (Unix Epoch)
+      path: "/",
+    });
+
+    return resposta;
+  } catch (erro) {
+    console.error("[CRITICAL] Erro no logout:", erro);
+    return NextResponse.json({ erro: "Internal Error" }, { status: 500 });
+  }
 }

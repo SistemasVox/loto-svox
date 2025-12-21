@@ -1,0 +1,18 @@
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  message   String
+  link      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([isRead])
+}
+
+model Traffic {
+  ip        String   @id
+  email     String   @default("Visitante")
+  timestamp DateTime @default(now())
+}

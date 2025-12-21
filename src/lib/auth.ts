@@ -1,36 +1,32 @@
-// ======================================================================
-// ARQUIVO: src/lib/auth.ts
-// DESCRIÇÃO: Gestão de Autenticação e Verificação de Protocolo Ativo.
-// ======================================================================
-
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { Prisma } from "@prisma/client";
 
 // --- CONSTANTES (ZERO MAGIC NUMBERS) ---
-const SEGREDO_JWT = process.env.JWT_SECRET || "segredo_temporario_vps";
-const SALTO_BCRYPT = 10;
-const TEMPO_TOKEN = "7d";
+const SEGREDO_JWT = process.env.JWT_SECRET;
+const SALT_ROUNDS = 10;
+const EXPIRACAO_SESSAO = "7d";
 
-interface CargaToken {
+interface AuthPayload {
   userId: number;
 }
 
 /**
- * Obtém o usuário atual e valida a expiração do plano de 30 dias.
- * Se expirado, o status é alterado para 'PAST_DUE' no banco de dados.
+ * Recupera o usuário do banco incluindo permissões (AdminRole) e planos.
+ * @param token JWT recebido via cookie.
  */
 export async function getCurrentUser(token: string | null): Promise<any | null> {
-  if (!token) return null;
+  if (!token || !SEGREDO_JWT) return null;
 
   try {
-    const decodificado = jwt.verify(token, SEGREDO_JWT) as CargaToken;
+    const decoded = jwt.verify(token, SEGREDO_JWT) as AuthPayload;
 
-    // Busca usuário com transação de leitura protegida
-    const usuario = await prisma.user.findUnique({
-      where: { id: decodificado.userId },
+    // I/O com inclusão da nova tabela de permissões
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.userId },
       include: {
+        role: true, // Garante que a flag de admin venha do banco
         subscriptions: {
           where: { status: "ACTIVE" },
           orderBy: { createdAt: "desc" },
@@ -39,77 +35,96 @@ export async function getCurrentUser(token: string | null): Promise<any | null> 
       },
     });
 
-    if (!usuario) return null;
+    if (!user) {
+      console.warn(`[AUTH] Usuário ID ${decoded.userId} não encontrado.`);
+      return null;
+    }
 
-    const assinaturaAtiva = usuario.subscriptions[0];
-
-    // LÓGICA DE ENFORCEMENT DE EXPIRAÇÃO
-    if (assinaturaAtiva && assinaturaAtiva.expiresAt) {
+    // Gerenciamento de validade de plano
+    const activeSub = user.subscriptions[0];
+    if (activeSub && activeSub.expiresAt) {
       const agora = new Date();
-      const dataExpiracao = new Date(assinaturaAtiva.expiresAt);
+      const expiracao = new Date(activeSub.expiresAt);
 
-      if (agora > dataExpiracao) {
+      if (agora > expiracao) {
         try {
-          // Downgrade silencioso e atômico
           await prisma.subscription.update({
-            where: { id: assinaturaAtiva.id },
+            where: { id: activeSub.id },
             data: { status: "PAST_DUE" },
           });
-          
-          console.info(`[INFO] Protocolo expirado e revogado para: ${usuario.email}`);
-        } catch (erro_io) {
-          console.error("[ERRO] Falha ao persistir expiração no banco", erro_io);
+          return { ...user, subscriptions: [] };
+        } catch (erroBanco) {
+          console.error("[CRITICAL] Erro ao expirar plano:", erroBanco);
         }
-
-        // Retorna o usuário como FREE para o sistema atual
-        return { ...usuario, subscriptions: [] };
       }
     }
 
-    return usuario;
-  } catch (erro_token) {
-    // Token inválido ou corrompido: trata como visitante
+    return user;
+  } catch (erro) {
+    console.error("[AUTH] Falha na verificação do token:", erro);
     return null;
   }
 }
 
-/**
- * Utilitários de Token e Senha (Segurança Obrigatória)
- */
-export function createAuthToken(userId: number): string {
-  return jwt.sign({ userId }, SEGREDO_JWT, { expiresIn: TEMPO_TOKEN });
-}
-
-export function verifyToken(token: string): CargaToken | null {
+export function verifyToken(token: string): AuthPayload | null {
+  if (!SEGREDO_JWT) return null;
   try {
-    return jwt.verify(token, SEGREDO_JWT) as CargaToken;
+    return jwt.verify(token, SEGREDO_JWT) as AuthPayload;
   } catch {
     return null;
   }
 }
 
+export function createAuthToken(userId: number): string {
+  if (!SEGREDO_JWT) throw new Error("JWT_SECRET ausente.");
+  return jwt.sign({ userId }, SEGREDO_JWT, { expiresIn: EXPIRACAO_SESSAO });
+}
+
+export async function updateUserProfile(
+  token: string | null,
+  data: { name: string; email: string }
+): Promise<any> {
+  if (!token) throw new Error("Não autorizado");
+  const payload = verifyToken(token);
+  if (!payload) throw new Error("Sessão expirada");
+
+  try {
+    return await prisma.user.update({
+      where: { id: payload.userId },
+      data: {
+        name: data.name,
+        email: data.email.trim().toLowerCase(),
+      },
+    });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      throw new Error("E-mail em uso por outro usuário.");
+    }
+    throw error;
+  }
+}
+
 export async function changeUserPassword(
   token: string | null,
-  dados: { currentPassword: string; newPassword: string }
+  data: { currentPassword: string; newPassword: string }
 ): Promise<void> {
-  if (!token) throw new Error("Acesso negado.");
+  if (!token) throw new Error("Token ausente");
   const payload = verifyToken(token);
-  if (!payload) throw new Error("Sessão expirada.");
+  if (!payload) throw new Error("Token inválido");
 
-  const registro = await prisma.user.findUnique({
+  const userRecord = await prisma.user.findUnique({
     where: { id: payload.userId },
     select: { hashedPassword: true },
   });
 
-  if (!registro) throw new Error("Usuário não localizado.");
+  if (!userRecord) throw new Error("Usuário inexistente");
 
-  const match = await bcrypt.compare(dados.currentPassword, registro.hashedPassword);
-  if (!match) throw new Error("A senha atual está incorreta.");
+  const isValid = await bcrypt.compare(data.currentPassword, userRecord.hashedPassword);
+  if (!isValid) throw new Error("Senha atual incorreta");
 
-  const novoHash = await bcrypt.hash(dados.newPassword, SALTO_BCRYPT);
-  
+  const newHash = await bcrypt.hash(data.newPassword, SALT_ROUNDS);
   await prisma.user.update({
     where: { id: payload.userId },
-    data: { hashedPassword: novoHash },
+    data: { hashedPassword: newHash },
   });
 }

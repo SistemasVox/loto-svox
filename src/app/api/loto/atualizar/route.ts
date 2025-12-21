@@ -1,90 +1,83 @@
-// src/app/api/loto/atualizar/route.ts
-import { NextRequest, NextResponse } from "next/server";
-import { loteriaPrisma } from "@/lib/loteriaPrisma";
-import { verificarAdmin } from "@/lib/auth"; // Assumindo utilitário de validação JWT
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { checkAdminAccess } from "@/lib/admin";
 
-// Constantes para evitar Magic Numbers
-const CAIXA_API_URL = "https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil/";
-const BATCH_SIZE = 50; 
+export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+// --- CONSTANTES TÉCNICAS (H6: RESILIÊNCIA) ---
+const LOTE_TAMANHO = 20;
+const CAIXA_URL = "https://servicebus2.caixa.gov.br/portaldeloterias/api/lotofacil/";
+const CABECALHOS = {
+  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  "Accept": "application/json",
+  "Referer": "https://loterias.caixa.gov.br/"
+};
+
+export async function POST() {
   try {
-    // 1. Segurança: Validar Sessão Admin
-    const isAdmin = await verificarAdmin(req);
-    if (!isAdmin) {
-      return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
-    }
+    const administrador = await checkAdminAccess();
+    if (!administrador) return NextResponse.json({ error: "403" }, { status: 403 });
 
-    // 2. Análise de Estado Atual
-    const ultimoNoBanco = await loteriaPrisma.loto.findFirst({
-      orderBy: { concurso: 'desc' },
-      select: { concurso: true }
-    });
+    // 1. Obter meta-dados da Caixa
+    const respostaCaixa = await fetch(CAIXA_URL, { headers: CABECALHOS, cache: 'no-store' });
+    if (!respostaCaixa.ok) throw new Error(`Caixa offline: ${respostaCaixa.status}`);
     
-    const inicioSync = (ultimoNoBanco?.concurso || 0) + 1;
+    const metaDados = await respostaCaixa.json();
+    const ultimoConcursoCaixa = metaDados.numero;
 
-    // 3. Busca meta-dados do último concurso disponível
-    const resMetadata = await fetch(CAIXA_API_URL, { cache: 'no-store' });
-    if (!resMetadata.ok) throw new Error("Falha ao conectar com API da Caixa");
-    const metadata = await resMetadata.json();
-    const ultimoNaCaixa = metadata.numero;
+    // 2. Estado do banco unificado (dev.db)
+    const ultimoNoBanco = await prisma.loto.findFirst({ orderBy: { concurso: 'desc' } });
+    const inicioProcessamento = (ultimoNoBanco?.concurso || 0) + 1;
 
-    if (inicioSync > ultimoNaCaixa) {
-      return NextResponse.json({ ok: true, mensagem: "Base já está sincronizada" });
+    if (inicioProcessamento > ultimoConcursoCaixa) {
+      return NextResponse.json({ ok: true, inseridos: 0, faltantes: 0 });
     }
 
-    const novosConcursos = [];
-    console.info(`[LOTO_SYNC] Iniciando sincronização do ${inicioSync} ao ${ultimoNaCaixa}`);
+    // 3. Coleta de dados por lote
+    const fimProcessamento = Math.min(inicioProcessamento + LOTE_TAMANHO, ultimoConcursoCaixa + 1);
+    const listaNovosJogos = [];
 
-    // 4. Execução de Busca (Sequencial para evitar Rate Limit da Caixa)
-    for (let i = inicioSync; i <= ultimoNaCaixa; i++) {
+    for (let i = inicioProcessamento; i < fimProcessamento; i++) {
       try {
-        const res = await fetch(`${CAIXA_API_URL}${i}`, { cache: 'no-store' });
-        if (!res.ok) continue;
+        const r = await fetch(`${CAIXA_URL}${i}`, { headers: CABECALHOS });
+        if (!r.ok) continue;
+        const d = await r.json();
         
-        const d = await res.json();
-        
-        // Formatação de data resiliente
-        let dataFormatada = null;
-        if (d.dataApuracao) {
-          const [dia, mes, ano] = d.dataApuracao.split('/');
-          dataFormatada = `${ano}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+        if (d?.listaDezenas) {
+          listaNovosJogos.push({
+            concurso: i,
+            data_concurso: d.dataApuracao || null,
+            dezenas: d.listaDezenas.map((n: string) => n.padStart(2, '0')).sort().join(",")
+          });
         }
-
-        novosConcursos.push({
-          concurso: i,
-          data_concurso: dataFormatada,
-          dezenas: d.listaDezenas ? d.listaDezenas.join(",") : ""
-        });
-
-        // Log de progresso a cada 20 registros
-        if (i % 20 === 0) console.debug(`[LOTO_SYNC] Processados ${i}/${ultimoNaCaixa}`);
-        
       } catch (err) {
-        console.warn(`[LOTO_SYNC] Falha ao buscar concurso ${i}, pulando...`);
+        console.warn(`[SYNC] Falha ao baixar concurso ${i}`);
         continue;
       }
     }
 
-    // 5. Persistência em Lote (Atomicity)
-    if (novosConcursos.length > 0) {
-      await loteriaPrisma.loto.createMany({
-        data: novosConcursos,
-        skipDuplicates: true
-      });
+    // 4. PERSISTÊNCIA COMPATÍVEL COM SQLITE (RESOLUÇÃO DO ERRO 500)
+    // Substituímos createMany por um loop de upsert dentro de transação
+    if (listaNovosJogos.length > 0) {
+      await prisma.$transaction(
+        listaNovosJogos.map((jogo) =>
+          prisma.loto.upsert({
+            where: { concurso: jogo.concurso },
+            update: {}, // Não altera se já existir
+            create: jogo,
+          })
+        )
+      );
     }
 
-    return NextResponse.json({ 
-      ok: true, 
-      inseridos: novosConcursos.length,
-      mensagem: `Sincronização concluída: ${novosConcursos.length} novos registros`
+    return NextResponse.json({
+      ok: true,
+      inseridos: listaNovosJogos.length,
+      faltantes: ultimoConcursoCaixa - (fimProcessamento - 1)
     });
 
-  } catch (error: any) {
-    console.error("[CRITICAL] Erro na rota de atualização:", error.message);
-    return NextResponse.json({ 
-      ok: false, 
-      error: "Falha interna durante a sincronização" 
-    }, { status: 500 });
+  } catch (erro: any) {
+    console.error("[FATAL] Erro na sincronização:", erro.message);
+    return NextResponse.json({ error: erro.message }, { status: 500 });
   }
 }
