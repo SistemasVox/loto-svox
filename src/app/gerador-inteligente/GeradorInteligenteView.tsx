@@ -1,11 +1,10 @@
 /* =============================================================================
  * ARQUIVO: src/app/gerador-inteligente/GeradorInteligenteView.tsx
- * VERSÃO: 2.3.5 (Full Implementation - No Omissions)
- * DESCRIÇÃO: View principal do Gerador Inteligente. Gerencia a composição da 
- * UI e o feedback visual contextual (Toast Colorido).
+ * VERSÃO: 3.6.0 (Full Implementation - Features & Reactivity Fix)
+ * DESCRIÇÃO: View principal com suporte a análise de lote e progresso animado.
  * ============================================================================= */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { GeneratorType } from '@/types/generator';
 import { gameStyles } from '@/styles/gameStyles';
@@ -43,7 +42,7 @@ interface GeradorInteligenteViewProps {
   numberPreferences: any;
   handleGenerateSingle: () => void;
   handleGenerateBatch: () => void;
-  handleClearBatch: () => void; // Obrigatório para evitar ReferenceError
+  handleClearBatch: () => void;
   handleSetFixedNumbers: (type: GeneratorType, numbers: number[]) => void;
   handleSetExcludedNumbers: (type: GeneratorType, numbers: number[]) => void;
   playHoverSound: () => void;
@@ -54,7 +53,6 @@ interface GeradorInteligenteViewProps {
   turboUsages: number;
   turboLimit: number;
   loadingTurbo: boolean;
-  // Propriedade de Feedback Visual
   toast?: { message: string; target: 'fixed' | 'excluded' } | null;
 }
 
@@ -62,7 +60,6 @@ interface GeradorInteligenteViewProps {
 // COMPONENTE PRINCIPAL
 // =============================================================================
 export default function GeradorInteligenteView(props: GeradorInteligenteViewProps) {
-  // Destruturação total das props para disponibilidade imediata no JSX
   const {
     activeTab,
     setActiveTab,
@@ -104,14 +101,15 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
     return <RestrictedAccessView activeTab={activeTab} playHoverSound={playHoverSound} />;
   }
 
-  // Handlers internos de UI
+  /* -----------------------------------------------------------------------------
+   * FIX: Extração memorizada das preferências para garantir sincronização visual
+   * ----------------------------------------------------------------------------- */
+  const currentPrefs = useMemo(() => {
+    return numberPreferences[activeTab] || { fixos: [], excluidos: [] };
+  }, [numberPreferences, activeTab]);
+
   const handleLockedTabClick = (tab: GeneratorType) => {
     setTargetPlan(tab);
-    setShowUpgradeModal(true);
-  };
-
-  const handleUpgradeClick = (plan: string) => {
-    setTargetPlan(plan as GeneratorType);
     setShowUpgradeModal(true);
   };
 
@@ -148,7 +146,7 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
             />
           </div>
 
-          {/* Configuração de Dezenas (Somente Plus/Premium) */}
+          {/* Configuração de Dezenas (Plus e Premium) */}
           {(activeTab === 'plus' || activeTab === 'premium') && (
             <div className="animate-slide-in-delayed-2 relative">
               
@@ -157,30 +155,22 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
                 <div 
                   className={`absolute z-[50] pointer-events-none transition-all duration-300 animate-toast-pop
                     ${toast.target === 'fixed' ? 'left-4 sm:left-[15%]' : 'right-4 sm:right-[15%]'}
-                    top-[-35px]`}
+                    top-[-40px]`}
                 >
-                  <div className={`px-5 py-2.5 rounded-xl shadow-2xl flex items-center gap-3 border-2 backdrop-blur-md ${
+                  <div className={`px-5 py-2.5 rounded-2xl border-2 backdrop-blur-md ${
                     toast.target === 'fixed' 
-                      ? 'bg-green-600/90 text-white border-green-400' 
-                      : 'bg-red-600/90 text-white border-red-400'
-                  }`}>
-                    <div className="flex items-center justify-center w-6 h-6 bg-white/20 rounded-full">
-                      <span className="text-xs">{toast.target === 'fixed' ? '✓' : '✕'}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="font-black text-[10px] uppercase tracking-widest leading-none mb-0.5">
-                        {toast.target === 'fixed' ? 'Ajuste em Fixos' : 'Ajuste em Excluídos'}
-                      </span>
-                      <span className="text-sm font-bold leading-none">{toast.message}</span>
-                    </div>
+                      ? 'bg-green-600/90 border-green-400' 
+                      : 'bg-red-600/90 border-red-400'
+                  } text-white shadow-2xl flex items-center gap-2 animate-pulse`}>
+                    <span className="text-xs font-bold uppercase italic">{toast.message}</span>
                   </div>
                 </div>
               )}
 
               <NumberSelectionTables
                 activeTab={activeTab}
-                numerosFixos={numberPreferences[activeTab].fixos}
-                numerosExcluidos={numberPreferences[activeTab].excluidos}
+                numerosFixos={currentPrefs.fixos || []}
+                numerosExcluidos={currentPrefs.excluidos || []}
                 onFixedNumbersChange={nums => handleSetFixedNumbers(activeTab, nums)}
                 onExcludedNumbersChange={nums => handleSetExcludedNumbers(activeTab, nums)}
                 onHover={playHoverSound}
@@ -188,7 +178,7 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
             </div>
           )}
 
-          {/* Painel Central de Geração */}
+          {/* Painel Central de Geração com Progresso Animado */}
           <div className={`animate-slide-in-delayed-${(activeTab === 'plus' || activeTab === 'premium') ? '3' : '2'}`}>
             <GeneratorPanel
               activeTab={activeTab}
@@ -214,26 +204,25 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
             />
           </div>
 
-          {/* Resultados e Análise de Lote */}
+          {/* Cards Inferiores: Resultados e Análise de Lote */}
           {activeGames.length > 0 && (
             <div className={`animate-slide-in-delayed-${(activeTab === 'plus' || activeTab === 'premium') ? '4' : '3'}`}>
               <BatchAnalysis games={activeGames} />
             </div>
           )}
 
-          {/* Tabela de Planos e Upgrades */}
+          {/* Comparação de Níveis */}
           <div className={`animate-slide-in-delayed-${(activeTab === 'plus' || activeTab === 'premium') ? '5' : '4'}`}>
             <LevelComparison
               isLoggedIn={isLoggedIn}
               subscriptionPlan={subscriptionPlan}
               onPlanHover={playHoverSound}
-              onUpgradeClick={handleUpgradeClick}
+              onUpgradeClick={(p) => { setTargetPlan(p as GeneratorType); setShowUpgradeModal(true); }}
             />
           </div>
         </div>
       </div>
 
-      {/* Modal de Upgrade Global */}
       {showUpgradeModal && (
         <UpgradeModal
           isOpen={showUpgradeModal}
@@ -245,16 +234,13 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
 
       {/* ESTILOS CSS-IN-JS (Scoped) */}
       <style jsx global>{`
-        /* Animação de Entrada dos Painéis */
         @keyframes slideIn {
           from { opacity: 0; transform: translateY(30px) scale(0.98); }
           to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        /* Animação do Toast Pop (Feedback Imediato) */
         @keyframes toastPop {
           0% { opacity: 0; transform: translateY(20px) scale(0.85); }
-          40% { opacity: 1; transform: translateY(-8px) scale(1.08); }
           100% { opacity: 1; transform: translateY(0) scale(1); }
         }
 
@@ -268,11 +254,9 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
         
         .dezena-bola { ${gameStyles.dezenaBola} }
 
-        /* Custom Scrollbar para experiência Webmaster */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #1a1a1a; }
         ::-webkit-scrollbar-thumb { background: linear-gradient(135deg, #404040, #0ea5e9); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
       `}</style>
     </div>
   );

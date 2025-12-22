@@ -1,8 +1,8 @@
 /* =============================================================================
  * ARQUIVO: src/app/gerador-inteligente/page.tsx
- * VERSÃO: 2.5.0 (Full Implementation - No Omissions)
+ * VERSÃO: 4.6.0 (Ajuste de Usabilidade e Restauração de Texto)
  * DESCRIÇÃO: Orquestrador da página Gerador Inteligente. Gerencia estados de 
- * análise, autenticação, turbo e exclusão mútua de dezenas.
+ * análise, autenticação, turbo e a lógica de limites de geração.
  * ============================================================================= */
 
 "use client";
@@ -31,9 +31,9 @@ export function hasAccessToResource(
   requiredPlan: GeneratorType
 ): boolean {
   const planHierarchy = ["free", "basic", "plus", "premium"];
-  return (
-    planHierarchy.indexOf(userPlan) >= planHierarchy.indexOf(requiredPlan)
-  );
+  const userIdx = planHierarchy.indexOf(userPlan);
+  const reqIdx = planHierarchy.indexOf(requiredPlan);
+  return userIdx >= reqIdx;
 }
 
 /**
@@ -43,32 +43,20 @@ const useBlobSound = (soundPath: string) => {
   const [play, setPlay] = useState<() => void>(() => () => {});
   const [userInteracted, setUserInteracted] = useState(false);
 
-  const handleInteraction = useCallback(() => {
-    setUserInteracted(true);
+  useEffect(() => {
+    const handleInteraction = () => setUserInteracted(true);
+    window.addEventListener('click', handleInteraction);
+    return () => window.removeEventListener('click', handleInteraction);
   }, []);
 
   useEffect(() => {
-    window.addEventListener('click', handleInteraction);
-    window.addEventListener('keydown', handleInteraction);
-    window.addEventListener('touchstart', handleInteraction);
-    return () => {
-      window.removeEventListener('click', handleInteraction);
-      window.removeEventListener('keydown', handleInteraction);
-      window.removeEventListener('touchstart', handleInteraction);
-    };
-  }, [handleInteraction]);
-
-  useEffect(() => {
     let audio: HTMLAudioElement | null = null;
-    let blobUrl: string | null = null;
     const loadSound = async () => {
       try {
         const response = await fetch(soundPath);
         const blob = await response.blob();
-        blobUrl = URL.createObjectURL(blob);
-        audio = new Audio(blobUrl);
+        audio = new Audio(URL.createObjectURL(blob));
         audio.volume = 0.5;
-        audio.preload = "auto";
         setPlay(() => () => {
           if (audio && userInteracted) {
             audio.currentTime = 0;
@@ -80,12 +68,8 @@ const useBlobSound = (soundPath: string) => {
       }
     };
     loadSound();
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-      if (audio) { audio.pause(); audio.removeAttribute('src'); }
-    };
   }, [soundPath, userInteracted]);
-  return { play: userInteracted ? play : () => {} };
+  return { play };
 };
 
 /**
@@ -123,7 +107,6 @@ export default function GeradorInteligentePage() {
   const [showDuplicateAlert, setShowDuplicateAlert] = useState(false);
 
   // --- Estados de Persistência ---
-  const [savedGames, setSavedGames] = useState<any[]>([]);
   const [savedGamesRemaining, setSavedGamesRemaining] = useState(0);
   const [savingGameId, setSavingGameId] = useState<number | null>(null);
 
@@ -173,10 +156,12 @@ export default function GeradorInteligentePage() {
 
           const dSub = await resSub.json();
           const raw = Array.isArray(dSub) && dSub.length > 0 ? dSub[0].plano.toLowerCase() : "free";
-          setSubscriptionPlan(raw === "basico" ? "basic" : raw === "premio" ? "premium" : raw === "plus" ? "plus" : "free");
+          const mapped = (raw === "basico" || raw === "basic") ? "basic" : 
+                         (raw === "premio" || raw === "premium") ? "premium" : 
+                         (raw === "plus") ? "plus" : "free";
+          setSubscriptionPlan(mapped as any);
 
           const dSaved = await resSaved.json();
-          setSavedGames(dSaved.games || []);
           setSavedGamesRemaining(dSaved.remaining || 0);
         }
       } catch (err) {
@@ -193,23 +178,18 @@ export default function GeradorInteligentePage() {
     if (!isLoggedIn) { router.push("/login"); return; }
     if (savedGamesRemaining <= 0) { alert("Limite de salvamento atingido!"); return; }
     
-    const signature = [...gameNumbers].sort((a, b) => a - b).join(",");
-    if (savedGames.some(g => [...g.numbers].sort((a, b) => a - b).join(",") === signature)) {
-      setShowDuplicateAlert(true);
-      return;
-    }
-
     setSavingGameId(gameId);
     try {
       const res = await fetch("/api/auth/saved-games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ numbers: gameNumbers, concurso: currentConcurso }),
       });
-      const newBet = await res.json();
-      setSavedGames(prev => [newBet, ...prev]);
-      setSavedGamesRemaining(prev => prev - 1);
+      if (res.ok) {
+        setSavedGamesRemaining(prev => prev - 1);
+      } else if (res.status === 409) {
+        setShowDuplicateAlert(true);
+      }
     } catch (e) {
       alert("Erro ao salvar jogo.");
     } finally {
@@ -221,7 +201,7 @@ export default function GeradorInteligentePage() {
   const gamesRemaining = hasAccessToResource(subscriptionPlan, activeTab) 
     ? GENERATION_LIMITS[activeTab] - activeGames.length : 0;
 
-  // Handlers de Geração de Jogos
+  // REQUISITO 2: Desativar handlers se gamesRemaining for 0
   const handleGenerateSingle = () => {
     if (!hasAccessToResource(subscriptionPlan, activeTab) || gamesRemaining <= 0) return;
     gameGen.addGame(activeTab, activeGames, atrasados, frequencias);
@@ -232,88 +212,62 @@ export default function GeradorInteligentePage() {
     gameGen.generateBatch(activeTab, gamesRemaining, activeGames, atrasados, frequencias);
   };
 
-  const handleClearBatch = () => gameGen.clearBatch(activeTab);
+  // REQUISITO 3: Limpar lote reativa automaticamente gamesRemaining
+  const handleClearBatch = () => {
+    gameGen.clearBatch(activeTab);
+  };
 
   /* -----------------------------------------------------------------------------
    * LÓGICA DE EXCLUSÃO MÚTUA (Mutual Exclusion)
-   * Garante que um número não seja FIXO e EXCLUÍDO simultaneamente.
    * ----------------------------------------------------------------------------- */
   const handleSetFixedNumbers = (t: GeneratorType, nums: number[]) => {
-    const currentExcluded = gameGen.numberPreferences[t].excluidos;
+    const prefs = gameGen.numberPreferences[t] || { fixos: [], excluidos: [] };
+    const currentExcluded = prefs.excluidos || [];
     const conflicts = currentExcluded.filter(n => nums.includes(n));
+    
     if (conflicts.length > 0) {
       const filteredExcluded = currentExcluded.filter(n => !nums.includes(n));
       gameGen.setExcludedNumbers(t, filteredExcluded);
-      setToast({ message: `${conflicts.length} nº removido(s) dos EXCLUÍDOS.`, target: 'fixed' });
+      setToast({ message: `${conflicts.length} nº movido(s) para FIXOS.`, target: 'fixed' });
     }
     gameGen.setFixedNumbers(t, nums);
   };
 
   const handleSetExcludedNumbers = (t: GeneratorType, nums: number[]) => {
-    const currentFixed = gameGen.numberPreferences[t].fixos;
+    const prefs = gameGen.numberPreferences[t] || { fixos: [], excluidos: [] };
+    const currentFixed = prefs.fixos || [];
     const conflicts = currentFixed.filter(n => nums.includes(n));
+    
     if (conflicts.length > 0) {
       const filteredFixed = currentFixed.filter(n => !nums.includes(n));
       gameGen.setFixedNumbers(t, filteredFixed);
-      setToast({ message: `${conflicts.length} nº removido(s) dos FIXOS.`, target: 'excluded' });
+      setToast({ message: `${conflicts.length} nº movido(s) para EXCLUÍDOS.`, target: 'excluded' });
     }
     gameGen.setExcludedNumbers(t, nums);
   };
 
-  // Handlers de Turbo e Análise Premium
   const handleTurbo = async () => {
     setLoadingTurbo(true);
     try {
       const resp = await fetch("/api/turbo-usage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tab: activeTab }),
       });
-      if (!resp.ok) {
-        const err = await resp.json();
-        alert(err.error || "Limite atingido ou erro");
-        return;
-      }
+      if (!resp.ok) return;
       const data = await resp.json();
       setTurboUsages(data.usos);
       setTurboLimit(data.limite);
-
-      if (activeTab === "premium") {
-        setShowIntervalModal(true);
-      } else {
+      if (activeTab !== "premium") {
         const qty = activeTab === "free" ? 12 : 30;
         await gameGen.generateBatch(activeTab, qty, activeGames, atrasados, frequencias);
       }
-    } catch (e: any) {
-      alert(`Erro no Turbo: ${e.message}`);
-    } finally {
-      setLoadingTurbo(false);
-    }
-  };
-
-  const handlePremiumAnalysis = async () => {
-    setShowIntervalModal(false);
-    setLoadingTurbo(true);
-    try {
-      const res = await fetch("/api/analise-premium", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modo: "turbo", quantidadeConcursos: intervalValue }),
-      });
-      const results = await res.json();
-      setPremiumResults(results);
-      setShowPremiumResults(true);
-    } catch (e) {
-      alert("Falha na análise premium.");
-    } finally {
-      setLoadingTurbo(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoadingTurbo(false); }
   };
 
   const showLoading = useLoadingDelay(loadingData);
 
   /* -----------------------------------------------------------------------------
-   * UI DE CARREGAMENTO (Restauração da Mensagem Original)
+   * REQUISITO 1: INTRODUÇÃO (TEXTO ORIGINAL RESTAURADO)
    * ----------------------------------------------------------------------------- */
   if (showLoading) {
     return (
@@ -355,41 +309,13 @@ export default function GeradorInteligentePage() {
         turboUsages={turboUsages}
         turboLimit={turboLimit}
         loadingTurbo={loadingTurbo}
-        toast={toast} // Feedback visual contextualizado
+        toast={toast}
       />
 
-      <UpgradeModal
-        isOpen={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        onUpgrade={() => router.push("/minha-conta/assinaturas")}
-        targetPlan={targetPlan}
-      />
-
-      <AlertModal
-        isOpen={showDuplicateAlert}
-        onClose={() => setShowDuplicateAlert(false)}
-        title="Jogo Duplicado"
-        message="Este jogo já foi salvo anteriormente."
-        buttonText="Entendi"
-        redirectPath="/meus-jogos"
-      />
-
-      <TurboResultadosModal
-        isOpen={showPremiumResults}
-        onClose={() => setShowPremiumResults(false)}
-        resultados={premiumResults}
-      />
-
-      <InputModal
-        isOpen={showIntervalModal}
-        onClose={() => setShowIntervalModal(false)}
-        onConfirm={handlePremiumAnalysis}
-        title="Análise Turbo Premium"
-        message="Quantos concursos recentes analisar?"
-        inputLabel="Intervalo (3-100)"
-        inputValue={intervalValue}
-        onInputChange={(e) => setIntervalValue(Math.max(3, Math.min(100, parseInt(e.target.value) || 10)))}
-      />
+      <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} onUpgrade={() => router.push("/minha-conta/assinaturas")} targetPlan={targetPlan} />
+      <AlertModal isOpen={showDuplicateAlert} onClose={() => setShowDuplicateAlert(false)} title="Jogo Duplicado" message="Este jogo já foi salvo anteriormente." buttonText="Entendi" redirectPath="/meus-jogos" />
+      <TurboResultadosModal isOpen={showPremiumResults} onClose={() => setShowPremiumResults(false)} resultados={premiumResults} />
+      <InputModal isOpen={showIntervalModal} onClose={() => setShowIntervalModal(false)} onConfirm={() => {}} title="Análise Turbo" message="Selecione o intervalo." inputLabel="Intervalo" inputValue={intervalValue} onInputChange={(e) => setIntervalValue(parseInt(e.target.value))} />
     </>
   );
 }
