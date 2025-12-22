@@ -1,83 +1,43 @@
-// src/app/minha-conta/seguranca/page.tsx
 "use client";
 
 import React, { useState } from "react";
-import ChangePasswordForm from "./ChangePasswordForm";
-import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { ShieldCheckIcon, TrashIcon, LockClosedIcon } from "@heroicons/react/24/outline";
+
+// Dependências críticas para o build
+import ChangePasswordModal from "./ChangePasswordModal";
+import EliminateAccountModal from "./EliminateAccountModal";
 
 export default function SegurancaPage() {
-  const router = useRouter();
-  const [deleting, setDeleting] = useState(false);
-
-  const handleDeleteAccount = async () => {
-    if (
-      !confirm(
-        "⚠️ Tem certeza que deseja excluir sua conta? Essa ação é irreversível."
-      )
-    ) {
-      return;
-    }
-    
-    setDeleting(true);
-    
-    try {
-      const res = await fetch("/api/auth/delete-account", {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (res.ok) {
-        router.push("/login");
-      } else {
-        alert("❌ Erro ao excluir conta.");
-      }
-    } catch (error) {
-      alert("❌ Erro de rede.");
-    } finally {
-      setDeleting(false);
-    }
-  };
+  const [activeModal, setActiveModal] = useState<null | "password" | "delete">(null);
 
   return (
-    <div className="space-y-8">
-      <h1 className="text-3xl font-bold mb-6 animate-fadeIn">Segurança da Conta</h1>
-      <ChangePasswordForm />
+    <div className="min-h-screen p-4 sm:p-8 space-y-10 bg-black/40">
+      <div className="flex items-center gap-4 mb-10">
+        <div className="p-3 bg-blue-600/20 rounded-2xl border border-blue-500/30"><ShieldCheckIcon className="h-8 w-8 text-blue-400" /></div>
+        <div><h1 className="text-3xl font-black text-white uppercase italic tracking-tighter">Segurança Operacional</h1><p className="text-gray-500 text-[10px] font-black uppercase tracking-widest">Gestão de Identidade e Integridade</p></div>
+      </div>
 
-      <motion.section 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="mt-8 bg-gray-800 p-6 rounded-xl shadow-lg animate-fadeIn"
-      >
-        <h2 className="text-xl font-semibold mb-4 text-red-400">
-          Excluir Conta
-        </h2>
-        <p className="mb-4 text-gray-300">
-          Ao excluir sua conta, todos os seus dados (apostas, assinaturas,
-          notificações etc.) serão apagados permanentemente.
-        </p>
-        <button
-          onClick={handleDeleteAccount}
-          disabled={deleting}
-          className="bg-red-600 hover:bg-red-700 px-4 py-3 rounded-lg text-white font-medium
-                   shadow-md hover:shadow-lg transition-all duration-300 relative overflow-hidden"
-        >
-          {deleting ? (
-            <span className="flex items-center justify-center gap-2">
-              <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Excluindo...
-            </span>
-          ) : (
-            "Excluir minha conta"
-          )}
-          {deleting && (
-            <span className="absolute inset-0 bg-red-700 opacity-30 animate-pulse"></span>
-          )}
-        </button>
-      </motion.section>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="bg-[#0d0d0d] border border-gray-800 p-8 rounded-[32px] relative overflow-hidden group hover:border-blue-500/50 transition-all">
+          <LockClosedIcon className="h-10 w-10 text-blue-500 mb-6" />
+          <h2 className="text-xl font-black text-white uppercase italic mb-2">Credenciais</h2>
+          <p className="text-gray-500 text-xs mb-8 leading-relaxed">Gerenciamento de chaves de acesso e proteção por criptografia.</p>
+          <button onClick={() => setActiveModal("password")} className="w-full bg-blue-600 py-4 rounded-2xl text-white font-black uppercase tracking-widest text-xs hover:bg-blue-700 active:scale-95 transition-all">Modificar Senha</button>
+        </div>
+
+        <div className="bg-[#0d0d0d] border border-red-900/20 p-8 rounded-[32px] relative overflow-hidden group hover:border-red-500/50 transition-all">
+          <TrashIcon className="h-10 w-10 text-red-500 mb-6" />
+          <h2 className="text-xl font-black text-red-500 uppercase italic mb-2">Zona Crítica</h2>
+          <p className="text-gray-500 text-xs mb-8 leading-relaxed">Eliminação definitiva de parâmetros, créditos e histórico de usuário.</p>
+          <button onClick={() => setActiveModal("delete")} className="w-full bg-red-600/10 border border-red-600/40 py-4 rounded-2xl text-red-500 font-black uppercase tracking-widest text-xs hover:bg-red-600/20 active:scale-95 transition-all">Excluir Conta</button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {activeModal === "password" && <ChangePasswordModal onClose={() => setActiveModal(null)} />}
+        {activeModal === "delete" && <EliminateAccountModal onClose={() => setActiveModal(null)} />}
+      </AnimatePresence>
     </div>
   );
 }
