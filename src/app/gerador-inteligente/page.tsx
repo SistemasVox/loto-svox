@@ -1,8 +1,8 @@
 /* =============================================================================
  * ARQUIVO: src/app/gerador-inteligente/page.tsx
- * VERSÃO: 2.4.0 (Full Implementation - No Omissions)
- * DESCRIÇÃO: Container da página Gerador Inteligente. Gerencia autenticação,
- * análise de dados, turbo e lógica de exclusão mútua [cite: 2025-12-14].
+ * VERSÃO: 2.5.0 (Full Implementation - No Omissions)
+ * DESCRIÇÃO: Orquestrador da página Gerador Inteligente. Gerencia estados de 
+ * análise, autenticação, turbo e exclusão mútua de dezenas.
  * ============================================================================= */
 
 "use client";
@@ -23,10 +23,9 @@ import AlertModal from "@/components/ui/AlertModal";
 import TurboResultadosModal from "@/components/ui/TurboResultadosModal";
 import InputModal from "@/components/ui/InputModal";
 
-// =============================================================================
-// UTILITÁRIOS E HOOKS AUXILIARES
-// =============================================================================
-
+/**
+ * Utilitário de Hierarquia de Planos para controle de acesso
+ */
 export function hasAccessToResource(
   userPlan: "free" | "basic" | "plus" | "premium",
   requiredPlan: GeneratorType
@@ -37,6 +36,9 @@ export function hasAccessToResource(
   );
 }
 
+/**
+ * Hook para reprodução de sons via Blob para alta performance
+ */
 const useBlobSound = (soundPath: string) => {
   const [play, setPlay] = useState<() => void>(() => () => {});
   const [userInteracted, setUserInteracted] = useState(false);
@@ -86,6 +88,9 @@ const useBlobSound = (soundPath: string) => {
   return { play: userInteracted ? play : () => {} };
 };
 
+/**
+ * Hook para controle de delay visual no carregamento (UX)
+ */
 function useLoadingDelay(loadingFlag: boolean) {
   const [showLoading, setShowLoading] = useState(true);
   useEffect(() => {
@@ -97,16 +102,12 @@ function useLoadingDelay(loadingFlag: boolean) {
   return showLoading && loadingFlag;
 }
 
-// =============================================================================
-// COMPONENTE PRINCIPAL (ORQUESTRADOR)
-// =============================================================================
-
 export default function GeradorInteligentePage() {
   const router = useRouter();
   const { isLoggedIn, user } = useAuth();
   const gameGen = useGameGenerator();
 
-  // --- Estados de Análise e Dados ---
+  // --- Estados de Algoritmo e Dados ---
   const [activeTab, setActiveTab] = useState<GeneratorType>("free");
   const [historicos, setHistoricos] = useState<ResultadoHistorico[]>([]);
   const [frequencias, setFrequencias] = useState<any[]>([]);
@@ -115,18 +116,18 @@ export default function GeradorInteligentePage() {
   const [subscriptionPlan, setSubscriptionPlan] = useState<"free" | "basic" | "plus" | "premium">("free");
   const [currentConcurso, setCurrentConcurso] = useState<number | null>(null);
 
-  // --- Estados de Persistência e UI ---
-  const [savedGames, setSavedGames] = useState<any[]>([]);
-  const [savedGamesRemaining, setSavedGamesRemaining] = useState(0);
-  const [savingGameId, setSavingGameId] = useState<number | null>(null);
+  // --- Estados de UI e Feedback ---
+  const [toast, setToast] = useState<{ message: string; target: 'fixed' | 'excluded' } | null>(null);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [targetPlan, setTargetPlan] = useState<GeneratorType | null>(null);
   const [showDuplicateAlert, setShowDuplicateAlert] = useState(false);
 
-  // --- Novo Estado: Toast Contextual ---
-  const [toast, setToast] = useState<{ message: string; target: 'fixed' | 'excluded' } | null>(null);
+  // --- Estados de Persistência ---
+  const [savedGames, setSavedGames] = useState<any[]>([]);
+  const [savedGamesRemaining, setSavedGamesRemaining] = useState(0);
+  const [savingGameId, setSavingGameId] = useState<number | null>(null);
 
-  // --- Estados de Turbo ---
+  // --- Estados de Turbo e Análise ---
   const [turboUsages, setTurboUsages] = useState(0);
   const [turboLimit, setTurboLimit] = useState(1);
   const [loadingTurbo, setLoadingTurbo] = useState(false);
@@ -137,7 +138,7 @@ export default function GeradorInteligentePage() {
 
   const { play: playHoverSound } = useBlobSound("/sounds/beep-1.mp3");
 
-  // Timer para limpeza automática do Toast
+  // Limpeza automática do Toast de conflito
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => setToast(null), 3500);
@@ -145,17 +146,16 @@ export default function GeradorInteligentePage() {
     }
   }, [toast]);
 
-  // Ciclo de Inicialização de Dados
+  // Inicialização do Banco de Dados Local e Perfil
   useEffect(() => {
-    async function initializeData() {
+    async function init() {
       setLoadingData(true);
       try {
         const res = await fetch("/api/resultados");
-        const data: ResultadoHistorico[] = await res.json();
+        const data = await res.json();
         setHistoricos(data);
         if (data.length > 0) {
-          const max = data.reduce((acc, h) => (h.concurso > acc ? h.concurso : acc), data[0].concurso);
-          setCurrentConcurso(max);
+          setCurrentConcurso(Math.max(...data.map((h: any) => h.concurso)));
         }
         setFrequencias(calculateFrequencies(data));
         setAtrasados(calculateDelayedNumbers(data));
@@ -172,30 +172,29 @@ export default function GeradorInteligentePage() {
           setTurboLimit(dTurbo.limite);
 
           const dSub = await resSub.json();
-          const rawPlan = Array.isArray(dSub) && dSub.length > 0 ? dSub[0].plano.toLowerCase() : "free";
-          const mapped = rawPlan === "basico" ? "basic" : rawPlan === "premio" ? "premium" : rawPlan === "plus" ? "plus" : "free";
-          setSubscriptionPlan(mapped as any);
+          const raw = Array.isArray(dSub) && dSub.length > 0 ? dSub[0].plano.toLowerCase() : "free";
+          setSubscriptionPlan(raw === "basico" ? "basic" : raw === "premio" ? "premium" : raw === "plus" ? "plus" : "free");
 
           const dSaved = await resSaved.json();
           setSavedGames(dSaved.games || []);
           setSavedGamesRemaining(dSaved.remaining || 0);
         }
       } catch (err) {
-        console.error("Erro na inicialização:", err);
+        console.error("Erro init:", err);
       } finally {
         setLoadingData(false);
       }
     }
-    initializeData();
+    init();
   }, [activeTab, isLoggedIn]);
 
-  // Handlers de Negócio
+  // Handlers de Salvamento
   const handleSaveGame = async (gameNumbers: number[], gameId: number) => {
     if (!isLoggedIn) { router.push("/login"); return; }
-    if (savedGamesRemaining <= 0) { alert("Limite de jogos salvos atingido!"); return; }
+    if (savedGamesRemaining <= 0) { alert("Limite de salvamento atingido!"); return; }
     
     const signature = [...gameNumbers].sort((a, b) => a - b).join(",");
-    if (savedGames.some((g) => [...g.numbers].sort((a, b) => a - b).join(",") === signature)) {
+    if (savedGames.some(g => [...g.numbers].sort((a, b) => a - b).join(",") === signature)) {
       setShowDuplicateAlert(true);
       return;
     }
@@ -208,7 +207,6 @@ export default function GeradorInteligentePage() {
         credentials: "include",
         body: JSON.stringify({ numbers: gameNumbers, concurso: currentConcurso }),
       });
-      if (!res.ok) throw new Error("Falha ao salvar");
       const newBet = await res.json();
       setSavedGames(prev => [newBet, ...prev]);
       setSavedGamesRemaining(prev => prev - 1);
@@ -220,9 +218,10 @@ export default function GeradorInteligentePage() {
   };
 
   const activeGames = gameGen.batches[activeTab] || [];
-  const gamesRemaining = hasAccessToResource(subscriptionPlan, activeTab)
+  const gamesRemaining = hasAccessToResource(subscriptionPlan, activeTab) 
     ? GENERATION_LIMITS[activeTab] - activeGames.length : 0;
 
+  // Handlers de Geração de Jogos
   const handleGenerateSingle = () => {
     if (!hasAccessToResource(subscriptionPlan, activeTab) || gamesRemaining <= 0) return;
     gameGen.addGame(activeTab, activeGames, atrasados, frequencias);
@@ -237,19 +236,15 @@ export default function GeradorInteligentePage() {
 
   /* -----------------------------------------------------------------------------
    * LÓGICA DE EXCLUSÃO MÚTUA (Mutual Exclusion)
-   * Se um número conflita entre cards, ele é movido e um Toast é disparado.
+   * Garante que um número não seja FIXO e EXCLUÍDO simultaneamente.
    * ----------------------------------------------------------------------------- */
   const handleSetFixedNumbers = (t: GeneratorType, nums: number[]) => {
     const currentExcluded = gameGen.numberPreferences[t].excluidos;
     const conflicts = currentExcluded.filter(n => nums.includes(n));
-    
     if (conflicts.length > 0) {
       const filteredExcluded = currentExcluded.filter(n => !nums.includes(n));
       gameGen.setExcludedNumbers(t, filteredExcluded);
-      setToast({ 
-        message: `${conflicts.length} nº removido(s) dos EXCLUÍDOS.`, 
-        target: 'fixed' 
-      });
+      setToast({ message: `${conflicts.length} nº removido(s) dos EXCLUÍDOS.`, target: 'fixed' });
     }
     gameGen.setFixedNumbers(t, nums);
   };
@@ -257,19 +252,15 @@ export default function GeradorInteligentePage() {
   const handleSetExcludedNumbers = (t: GeneratorType, nums: number[]) => {
     const currentFixed = gameGen.numberPreferences[t].fixos;
     const conflicts = currentFixed.filter(n => nums.includes(n));
-
     if (conflicts.length > 0) {
       const filteredFixed = currentFixed.filter(n => !nums.includes(n));
       gameGen.setFixedNumbers(t, filteredFixed);
-      setToast({ 
-        message: `${conflicts.length} nº removido(s) dos FIXOS.`, 
-        target: 'excluded' 
-      });
+      setToast({ message: `${conflicts.length} nº removido(s) dos FIXOS.`, target: 'excluded' });
     }
     gameGen.setExcludedNumbers(t, nums);
   };
 
-  // Handlers de Turbo e Análise
+  // Handlers de Turbo e Análise Premium
   const handleTurbo = async () => {
     setLoadingTurbo(true);
     try {
@@ -280,7 +271,7 @@ export default function GeradorInteligentePage() {
       });
       if (!resp.ok) {
         const err = await resp.json();
-        alert(err.error || "Limite atingido");
+        alert(err.error || "Limite atingido ou erro");
         return;
       }
       const data = await resp.json();
@@ -294,7 +285,7 @@ export default function GeradorInteligentePage() {
         await gameGen.generateBatch(activeTab, qty, activeGames, atrasados, frequencias);
       }
     } catch (e: any) {
-      alert(`Erro: ${e.message}`);
+      alert(`Erro no Turbo: ${e.message}`);
     } finally {
       setLoadingTurbo(false);
     }
@@ -312,8 +303,8 @@ export default function GeradorInteligentePage() {
       const results = await res.json();
       setPremiumResults(results);
       setShowPremiumResults(true);
-    } catch (e: any) {
-      alert("Falha na análise.");
+    } catch (e) {
+      alert("Falha na análise premium.");
     } finally {
       setLoadingTurbo(false);
     }
@@ -321,14 +312,19 @@ export default function GeradorInteligentePage() {
 
   const showLoading = useLoadingDelay(loadingData);
 
+  /* -----------------------------------------------------------------------------
+   * UI DE CARREGAMENTO (Restauração da Mensagem Original)
+   * ----------------------------------------------------------------------------- */
   if (showLoading) {
     return (
-      <div className="flex flex-col justify-center items-center min-h-[60vh] bg-black">
+      <div className="flex flex-col justify-center items-center min-h-[60vh] px-4 bg-black">
         <svg className="animate-spin h-14 w-14 text-blue-500 mb-4" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="#ccc" strokeWidth="4" fill="none" />
           <path className="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" />
         </svg>
-        <span className="text-xl font-semibold text-white">Carregando inteligência de dados...</span>
+        <span className="text-xl font-semibold text-white mb-2">Gerador Inteligente</span>
+        <span className="text-lg text-gray-300 mb-1">Carregando dados estratégicos…</span>
+        <span className="text-sm text-gray-500">Aguarde, pode demorar alguns segundos :)</span>
       </div>
     );
   }
@@ -359,7 +355,7 @@ export default function GeradorInteligentePage() {
         turboUsages={turboUsages}
         turboLimit={turboLimit}
         loadingTurbo={loadingTurbo}
-        toast={toast} // Injeção de feedback visual contextual
+        toast={toast} // Feedback visual contextualizado
       />
 
       <UpgradeModal
@@ -373,7 +369,7 @@ export default function GeradorInteligentePage() {
         isOpen={showDuplicateAlert}
         onClose={() => setShowDuplicateAlert(false)}
         title="Jogo Duplicado"
-        message="Você já salvou este jogo anteriormente."
+        message="Este jogo já foi salvo anteriormente."
         buttonText="Entendi"
         redirectPath="/meus-jogos"
       />
