@@ -1,6 +1,8 @@
-// ====================================================================
-// PATH: src/components/gerador/GeneratorTabs.tsx
-// ====================================================================
+/* =============================================================================
+ * ARQUIVO: src/components/gerador/GeneratorTabs.tsx
+ * VERSÃO: 2.1.0 (Produção - Labels de Acesso Dinâmicos)
+ * DESCRIÇÃO: Navegação de algoritmos com sinalização de bloqueio inteligente.
+ * ============================================================================= */
 
 import { FaDice, FaStar, FaGem, FaCrown, FaLock } from 'react-icons/fa';
 import { GeneratorType, CATEGORY_LIMITS } from '@/types/generator';
@@ -56,12 +58,14 @@ export default function GeneratorTabs({
             }}
             onMouseEnter={onTabHover}
           >
+            {/* Indicador de Cadeado Superior */}
             {!accessible && (
               <div className="absolute top-2 right-2 bg-yellow-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs">
                 <FaLock size={10} />
               </div>
             )}
             
+            {/* Contador de Jogos no Lote */}
             <div className="absolute top-2 left-2 bg-white text-[var(--blue)] rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
               {(batches[type] ?? []).length}
             </div>
@@ -77,16 +81,21 @@ export default function GeneratorTabs({
                 {type === 'premium' && <FaCrown className="text-xl" />}
               </div>
             </div>
+
             <h3 className="font-semibold mb-1">
               {type === 'free' ? 'Gratuito' : 
                type === 'basic' ? 'Básico' : 
                type === 'plus' ? 'Plus' : 'Prêmio'}
             </h3>
+
+            {/* REQUISITO: Label Dinâmico (Upgrade vs Login) */}
             {!accessible && (
-              <div className="text-xs text-red-500 flex items-center justify-center gap-1">
-                <FaLock size={10} /> Upgrade necessário
+              <div className="text-xs text-red-500 flex items-center justify-center gap-1 font-bold">
+                <FaLock size={10} /> 
+                {isLoggedIn ? 'Upgrade necessário' : 'Login necessário'}
               </div>
             )}
+
             <div className="text-xs mt-1">
               Limite: {CATEGORY_LIMITS[type]} jogos
             </div>

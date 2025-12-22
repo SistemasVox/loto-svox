@@ -1,8 +1,8 @@
-// =============================================================================
-// ARQUIVO: src/components/gerador/GeradorHeader.tsx
-// DESCRIÇÃO: Componente de cabeçalho da página do Gerador Inteligente.
-//            Exibe o título, subtítulo e indicadores de status do usuário.
-// =============================================================================
+/* =============================================================================
+ * ARQUIVO: src/components/gerador/GeradorHeader.tsx
+ * VERSÃO: 2.2.0 (Produção - UI Condicional de Segurança)
+ * DESCRIÇÃO: Cabeçalho dinâmico. Oculta quotas de salvamento para visitantes.
+ * ============================================================================= */
 
 import React from 'react';
 import { getLevelDisplayName } from '@/utils/displayHelpers';
@@ -21,22 +21,32 @@ interface GeradorHeaderProps {
 // =============================================================================
 // COMPONENTE
 // =============================================================================
-export default function GeradorHeader({ isSpecialBrowser, user, subscriptionPlan, historicos, savedGamesRemaining }: GeradorHeaderProps) {
+export default function GeradorHeader({ 
+  isSpecialBrowser, 
+  user, 
+  subscriptionPlan, 
+  historicos, 
+  savedGamesRemaining 
+}: GeradorHeaderProps) {
   return (
     <div className="mb-12 animate-slide-in bg-gray-900/90 backdrop-blur-md border border-gray-600/30 rounded-2xl p-8 shadow-2xl">
       <div className="text-center relative">
         <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-24 h-0.5 bg-gradient-to-r from-transparent via-blue-500 to-transparent" />
+        
         <h1 className="text-4xl md:text-5xl font-bold mb-4 relative px-8 py-4" style={isSpecialBrowser ? titleStyleOpera : titleStyle}>
           <span className="relative z-10">Gerador Inteligente</span>
           <div className="absolute -inset-8 bg-gradient-to-r from-blue-500/20 via-cyan-500/30 to-green-500/20 blur-2xl -z-10 scale-110" />
           <div className="absolute -inset-4 bg-gradient-to-r from-blue-400/10 via-cyan-400/15 to-green-400/10 blur-xl -z-10" />
           <div className="absolute -inset-2 bg-gradient-to-r from-blue-300/5 via-cyan-300/8 to-green-300/5 blur-lg -z-10" />
         </h1>
+
         <p className="text-lg text-gray-300 max-w-2xl mx-auto mb-6 leading-relaxed" style={subtitleStyle}>
           Gere combinações estratégicas para a Lotofácil usando inteligência artificial
           e análise de dados históricos avançada
         </p>
+
         <div className="flex flex-wrap justify-center gap-4 mb-4">
+          {/* IDENTIFICAÇÃO DO UTILIZADOR */}
           {user && (
             <div className="flex items-center gap-2 bg-gray-900/80 backdrop-blur-md border border-gray-600/20 rounded-full py-2 px-4 shadow-lg">
               <div className="w-2 h-2 rounded-full bg-green-400" />
@@ -45,19 +55,26 @@ export default function GeradorHeader({ isSpecialBrowser, user, subscriptionPlan
               </span>
             </div>
           )}
+
+          {/* STATUS DA BASE DE DADOS */}
           <div className="flex items-center gap-2 bg-gray-900/80 backdrop-blur-md border border-gray-600/20 rounded-full py-2 px-4 shadow-lg">
             <div className={`w-2 h-2 rounded-full ${historicos.length > 0 ? 'bg-blue-400' : 'bg-orange-400'}`} />
             <span className="text-sm text-gray-300 font-mono">
               {historicos.length > 0 ? `${historicos.length} concursos carregados` : 'Carregando dados...'}
             </span>
           </div>
-          <div className="flex items-center gap-2 bg-gray-900/80 backdrop-blur-md border border-gray-600/20 rounded-full py-2 px-4 shadow-lg">
-            <div className="w-2 h-2 rounded-full bg-yellow-400" />
-            <span className="text-sm text-gray-300 font-mono">
-              Jogos salvos: {savedGamesRemaining} restantes
-            </span>
-          </div>
+
+          {/* REQUISITO: OCULTAÇÃO DE JOGOS SALVOS PARA DESLOGADOS */}
+          {user && (
+            <div className="flex items-center gap-2 bg-gray-900/80 backdrop-blur-md border border-gray-600/20 rounded-full py-2 px-4 shadow-lg animate-fade-in">
+              <div className="w-2 h-2 rounded-full bg-yellow-400" />
+              <span className="text-sm text-gray-300 font-mono">
+                Jogos salvos: {savedGamesRemaining} restantes
+              </span>
+            </div>
+          )}
         </div>
+        
         <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-32 h-0.5 bg-gradient-to-r from-transparent via-cyan-500 to-transparent" />
       </div>
     </div>
@@ -65,7 +82,7 @@ export default function GeradorHeader({ isSpecialBrowser, user, subscriptionPlan
 }
 
 // =============================================================================
-// ESTILOS INLINE
+// ESTILOS INLINE (MANTIDOS ORIGINAIS)
 // =============================================================================
 const titleStyle: React.CSSProperties = {
     fontWeight: 700,
