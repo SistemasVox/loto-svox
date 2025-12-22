@@ -1,7 +1,8 @@
 /* =============================================================================
  * ARQUIVO: src/app/gerador-inteligente/GeradorInteligenteView.tsx
- * VERSÃO: 3.6.0 (Full Implementation - Features & Reactivity Fix)
+ * VERSÃO: 3.7.0 (Etapa 2 - Visualização Híbrida e Íntegra)
  * DESCRIÇÃO: View principal com suporte a análise de lote e progresso animado.
+ * Ajustado para correta sinalização de login vs upgrade.
  * ============================================================================= */
 
 import React, { useState, useMemo } from 'react';
@@ -34,11 +35,11 @@ interface GeradorInteligenteViewProps {
   activeGames: any[];
   gamesRemaining: number;
   historicos: any[];
-  loading: boolean;
+  loading?: boolean;
   loadingData: boolean;
   batchGenerating: boolean;
   batchProgress: number;
-  error: string | null;
+  error?: string | null;
   numberPreferences: any;
   handleGenerateSingle: () => void;
   handleGenerateBatch: () => void;
@@ -69,7 +70,6 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
     activeGames,
     gamesRemaining,
     historicos,
-    loading,
     loadingData,
     batchGenerating,
     batchProgress,
@@ -96,19 +96,26 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
   const [targetPlan, setTargetPlan] = useState<GeneratorType | null>(null);
   const isSpecialBrowser = useSpecialBrowserDetection();
 
-  // Guarda de Acesso: Bloqueio para abas avançadas sem autenticação
+  // Guarda de Acesso Original: Bloqueio visual para abas avançadas
   if (!isLoggedIn && (activeTab === 'plus' || activeTab === 'premium')) {
     return <RestrictedAccessView activeTab={activeTab} playHoverSound={playHoverSound} />;
   }
 
   /* -----------------------------------------------------------------------------
-   * FIX: Extração memorizada das preferências para garantir sincronização visual
+   * FIX: Extração memorizada com verificação de nulidade para evitar TypeErrors
    * ----------------------------------------------------------------------------- */
   const currentPrefs = useMemo(() => {
-    return numberPreferences[activeTab] || { fixos: [], excluidos: [] };
+    return (numberPreferences && numberPreferences[activeTab]) || { fixos: [], excluidos: [] };
   }, [numberPreferences, activeTab]);
 
+  /**
+   * REQUISITO: Diferenciação entre Login e Upgrade no clique das abas
+   */
   const handleLockedTabClick = (tab: GeneratorType) => {
+    if (!isLoggedIn) {
+      router.push('/login?redirect=/gerador-inteligente');
+      return;
+    }
     setTargetPlan(tab);
     setShowUpgradeModal(true);
   };
@@ -122,13 +129,13 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
     <div className="min-h-screen py-12 px-4 sm:px-8 relative bg-black/20 backdrop-blur-sm">
       <div className="max-w-6xl mx-auto relative z-10">
         
-        {/* Cabeçalho de Status do Usuário */}
+        {/* REQUISITO: Header oculta contagem se deslogado enviando null */}
         <GeradorHeader
           isSpecialBrowser={isSpecialBrowser}
           user={user}
           subscriptionPlan={subscriptionPlan}
           historicos={historicos}
-          savedGamesRemaining={savedGamesRemaining}
+          savedGamesRemaining={isLoggedIn ? savedGamesRemaining : null}
         />
 
         <div className="space-y-8">
@@ -146,11 +153,11 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
             />
           </div>
 
-          {/* Configuração de Dezenas (Plus e Premium) */}
-          {(activeTab === 'plus' || activeTab === 'premium') && (
+          {/* Configuração de Dezenas (Plus e Premium) - Apenas se Logado */}
+          {isLoggedIn && (activeTab === 'plus' || activeTab === 'premium') && (
             <div className="animate-slide-in-delayed-2 relative">
               
-              {/* FEEDBACK TOAST CONTEXTUAL */}
+              {/* FEEDBACK TOAST INTEGRAL */}
               {toast && (
                 <div 
                   className={`absolute z-[50] pointer-events-none transition-all duration-300 animate-toast-pop
@@ -178,13 +185,13 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
             </div>
           )}
 
-          {/* Painel Central de Geração com Progresso Animado */}
+          {/* Painel Central de Geração (Acesso Híbrido) */}
           <div className={`animate-slide-in-delayed-${(activeTab === 'plus' || activeTab === 'premium') ? '3' : '2'}`}>
             <GeneratorPanel
               activeTab={activeTab}
               activeGames={activeGames}
               gamesRemaining={gamesRemaining}
-              loading={loading || loadingData}
+              loading={props.loading || loadingData}
               batchGenerating={batchGenerating}
               batchProgress={batchProgress}
               errorMessage={error}
@@ -193,7 +200,7 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
               handleClearBatch={handleClearBatch}
               isLoggedIn={isLoggedIn}
               onButtonHover={playHoverSound}
-              savedGamesRemaining={savedGamesRemaining}
+              savedGamesRemaining={isLoggedIn ? savedGamesRemaining : 0}
               onSaveGame={onSaveGame}
               savingGameId={savingGameId}
               subscriptionPlan={subscriptionPlan}
@@ -201,23 +208,23 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
               turboUsages={turboUsages}
               turboLimit={turboLimit}
               loadingTurbo={loadingTurbo}
+              turboDisabled={!isLoggedIn} // Flag de conversão para o painel
             />
           </div>
 
-          {/* Cards Inferiores: Resultados e Análise de Lote */}
+          {/* Análise de Lote e Comparação */}
           {activeGames.length > 0 && (
-            <div className={`animate-slide-in-delayed-${(activeTab === 'plus' || activeTab === 'premium') ? '4' : '3'}`}>
+            <div className={`animate-slide-in-delayed-4`}>
               <BatchAnalysis games={activeGames} />
             </div>
           )}
 
-          {/* Comparação de Níveis */}
-          <div className={`animate-slide-in-delayed-${(activeTab === 'plus' || activeTab === 'premium') ? '5' : '4'}`}>
+          <div className={`animate-slide-in-delayed-5`}>
             <LevelComparison
               isLoggedIn={isLoggedIn}
               subscriptionPlan={subscriptionPlan}
               onPlanHover={playHoverSound}
-              onUpgradeClick={(p) => { setTargetPlan(p as GeneratorType); setShowUpgradeModal(true); }}
+              onUpgradeClick={(p) => handleLockedTabClick(p as GeneratorType)}
             />
           </div>
         </div>
@@ -232,7 +239,7 @@ export default function GeradorInteligenteView(props: GeradorInteligenteViewProp
         />
       )}
 
-      {/* ESTILOS CSS-IN-JS (Scoped) */}
+      {/* ESTILOS CSS-IN-JS ORIGINAIS PRESERVADOS */}
       <style jsx global>{`
         @keyframes slideIn {
           from { opacity: 0; transform: translateY(30px) scale(0.98); }

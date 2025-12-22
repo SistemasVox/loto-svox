@@ -1,18 +1,16 @@
 /* =============================================================================
  * ARQUIVO: src/components/gerador/GeneratorPanel.tsx
- * VERSÃO: 2.5.0 (Usability & Limit Logic Fix)
+ * VERSÃO: 3.6.0 (Etapa 3.1 - Versão Integral de Produção)
  * DESCRIÇÃO: Orquestrador técnico com travas de limite e design Vivid Black.
  * ============================================================================= */
 
 import React, { useState, useEffect } from 'react'
 import {
-  FaDice, FaStar, FaGem, FaCrown, FaPlus, FaTrash,
-  FaLayerGroup, FaExclamationTriangle, FaBolt, FaCopy,
+  FaPlus, FaTrash, FaLayerGroup, FaBolt,
 } from 'react-icons/fa'
 import { GeneratorType, LEVEL_DESCRIPTIONS } from '@/types/generator'
 import GamesList from './GamesList'
 import ProgressBar from './ProgressBar'
-import { GeneratedGame } from '@/types/generator'
 import ConfirmationModal from '@/components/ui/ConfirmationModal'
 
 const TURBO_RULES: Record<string, { label: string; desc: string }> = {
@@ -25,26 +23,30 @@ const TURBO_RULES: Record<string, { label: string; desc: string }> = {
 export default function GeneratorPanel(props: any) {
   const {
     activeTab, activeGames, gamesRemaining, loading, batchGenerating,
-    batchProgress, errorMessage, handleAddGame, handleGenerateBatch,
+    batchProgress, handleAddGame, handleGenerateBatch,
     handleClearBatch, isLoggedIn, onButtonHover, savedGamesRemaining,
-    onSaveGame, savingGameId, onTurbo, turboUsages, turboLimit, loadingTurbo
+    onSaveGame, savingGameId, onTurbo, turboUsages, turboLimit, loadingTurbo,
+    turboDisabled // Flag de segurança vinda da View
   } = props;
 
   const [showTurboModal, setShowTurboModal] = useState(false);
-  const [copiedFeedback, setCopiedFeedback] = useState(false);
   
-  // ESTADOS DE SINCRONIZAÇÃO
+  // ESTADOS DE SINCRONIZAÇÃO ORIGINAIS
   const [showProgress, setShowProgress] = useState(false);
   const [renderGames, setRenderGames] = useState(false);
   const [internalProgress, setInternalProgress] = useState(0);
 
   const regraTurbo = TURBO_RULES[activeTab] || { label: "Turbo", desc: "Restrito." };
-  const turboDescFinal = isLoggedIn ? regraTurbo.desc : "Acesso restrito: Realize login.";
+  
+  // REQUISITO: Texto de rodapé dinâmico para conversão
+  const turboDescFinal = isLoggedIn 
+    ? regraTurbo.desc 
+    : "Protocolo restrito. Realize login para ativar o Turbo.";
 
   // Trava de Usabilidade: Verifica se o limite foi atingido
   const isLimitReached = gamesRemaining <= 0;
 
-  // Orquestração: Mantém a barra visível por 3.5 segundos
+  // Gerenciamento da Barra de Progresso (UX de 3.5s original)
   useEffect(() => {
     if (batchGenerating) {
       setShowProgress(true);
@@ -83,7 +85,7 @@ export default function GeneratorPanel(props: any) {
         </div>
 
         <div className="flex flex-wrap gap-4">
-          {/* BOTÃO ADICIONAR: Bloqueado se limite atingido ou gerando */}
+          {/* BOTÃO ADICIONAR: Disponível para visitantes no modo Free */}
           <button 
             onClick={handleAddGame} 
             disabled={isLimitReached || loading || batchGenerating}
@@ -96,7 +98,7 @@ export default function GeneratorPanel(props: any) {
             <FaPlus /> ADICIONAR_
           </button>
 
-          {/* BOTÃO GERAR LOTE: Bloqueado se limite atingido ou gerando */}
+          {/* BOTÃO GERAR LOTE: Disponível para visitantes no modo Free */}
           <button 
             onClick={handleGenerateBatch} 
             disabled={isLimitReached || loading || batchGenerating}
@@ -109,14 +111,18 @@ export default function GeneratorPanel(props: any) {
             <FaLayerGroup /> GERAR_LOTE
           </button>
 
+          {/* BOTÃO TURBO: REQUISITO - Bloqueado visualmente para deslogados */}
           <button 
             onClick={() => setShowTurboModal(true)} 
-            disabled={loadingTurbo}
+            disabled={turboDisabled || loadingTurbo}
             onMouseEnter={onButtonHover}
-            className="flex items-center gap-3 px-8 py-4 bg-[#050505] text-orange-500 border-2 border-orange-500/40 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 shadow-[0_0_30px_rgba(249,115,22,0.15)] italic"
+            className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-[11px] uppercase tracking-[0.2em] transition-all active:scale-95 border-2 italic
+              ${turboDisabled 
+                ? "bg-slate-900/50 text-slate-600 border-slate-800 cursor-not-allowed opacity-40" 
+                : "bg-[#050505] text-orange-500 border-orange-500/40 hover:border-orange-500/60 shadow-[0_0_30px_rgba(249,115,22,0.15)]"}`}
           >
-            <FaBolt className="text-orange-400" /> {regraTurbo.label}
-            <span className="ml-2 text-[9px] bg-orange-500/20 px-2 py-0.5 rounded-lg">{turboUsages}/{turboLimit}</span>
+            <FaBolt className={!turboDisabled ? "text-orange-400" : "text-slate-700"} /> {regraTurbo.label}
+            {isLoggedIn && <span className="ml-2 text-[9px] bg-orange-500/20 px-2 py-0.5 rounded-lg">{turboUsages}/{turboLimit}</span>}
           </button>
 
           <button 
@@ -129,23 +135,48 @@ export default function GeneratorPanel(props: any) {
         </div>
       </div>
 
-      {/* PROGRESSO TÉCNICO SINCRONIZADO */}
       {showProgress && <ProgressBar progress={internalProgress} />}
 
       <div className="flex justify-between items-center border-t border-slate-800/50 pt-6 mt-6">
-        <span className="text-[10px] font-black text-slate-600 uppercase tracking-[0.3em]">{turboDescFinal}</span>
+        <span className={`text-[10px] font-black uppercase tracking-[0.3em] ${!isLoggedIn ? 'text-orange-500/70' : 'text-slate-600'}`}>
+          {turboDescFinal}
+        </span>
         <span className="text-[9px] font-black text-green-500/80 uppercase italic animate-pulse">• VPS_LATENCY: STABLE</span>
       </div>
 
       <div className="mt-12">
         {renderGames && activeGames.length > 0 ? (
+          /* DESIGN ORIGINAL: Animação de entrada da lista preservada */
           <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <GamesList games={activeGames} type={activeTab} onSaveGame={onSaveGame} savingGameId={savingGameId} savedGamesRemaining={savedGamesRemaining} />
+            <GamesList 
+              games={activeGames} 
+              type={activeTab} 
+              onSaveGame={onSaveGame} 
+              savingGameId={savingGameId} 
+              savedGamesRemaining={savedGamesRemaining}
+              isLoggedIn={isLoggedIn}
+            />
           </div>
-        ) : !showProgress && <div className="text-center py-24 border-2 border-dashed border-slate-800 rounded-[3rem] bg-[#050505]/30"><p className="text-[11px] font-black text-slate-700 uppercase tracking-[0.5em] italic">AGUARDANDO PROTOCOLO DE GERAÇÃO_</p></div>}
+        ) : !showProgress && (
+          <div className="text-center py-24 border-2 border-dashed border-slate-800 rounded-[3rem] bg-[#050505]/30">
+            <p className="text-[11px] font-black text-slate-700 uppercase tracking-[0.5em] italic">
+              AGUARDANDO PROTOCOLO DE GERAÇÃO_
+            </p>
+          </div>
+        )}
       </div>
 
-      <ConfirmationModal isOpen={showTurboModal} onClose={() => setShowTurboModal(false)} onConfirm={() => { setShowTurboModal(false); onTurbo() }} title="EXECUTAR PROTOCOLO TURBO?" message={turboDescFinal} confirmText="CONFIRMAR_" cancelText="ABORTAR" type="info" loading={loadingTurbo} />
+      <ConfirmationModal 
+        isOpen={showTurboModal} 
+        onClose={() => setShowTurboModal(false)} 
+        onConfirm={() => { setShowTurboModal(false); onTurbo() }} 
+        title="EXECUTAR PROTOCOLO TURBO?" 
+        message={turboDescFinal} 
+        confirmText="CONFIRMAR_" 
+        cancelText="ABORTAR" 
+        type="info" 
+        loading={loadingTurbo} 
+      />
     </div>
   )
 }

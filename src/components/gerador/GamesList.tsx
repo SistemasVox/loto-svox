@@ -1,6 +1,8 @@
 /* =============================================================================
  * ARQUIVO: src/components/gerador/GamesList.tsx
- * DESCRIÇÃO: Lista de GameCards para exibir combinações geradas e permitir salvar
+ * VERSÃO: 2.2.0 (Etapa 3.2 - Versão Integral de Produção)
+ * DESCRIÇÃO: Lista de GameCards para exibir combinações geradas e permitir salvar.
+ * ATUALIZAÇÃO: Injeção de estado de login para controle de permissões nos cards.
  * ============================================================================= */
 
 import React from 'react'
@@ -9,19 +11,20 @@ import { GeneratedGame, GeneratorType } from '@/types/generator'
 
 /* =============================================================================
  * INTERFACE: GamesListProps
- * Props do componente GamesList
+ * Definição rigorosa das propriedades necessárias para a listagem.
  * ============================================================================= */
 interface GamesListProps {
-  games: GeneratedGame[]                              // combinações geradas
-  type: GeneratorType                                  // tipo de gerador
-  onSaveGame: (numbers: number[], gameId: number) => void // callback salvar aposta
-  savingGameId: number | null                          // índice do jogo sendo salvo
-  savedGamesRemaining: number                          // salvos restantes
+  games: GeneratedGame[]                              // Coleção de combinações geradas
+  type: GeneratorType                                  // Algoritmo ativo (free, basic, plus, premium)
+  onSaveGame: (numbers: number[], gameId: number) => void // Handler de persistência definido no page.tsx
+  savingGameId: number | null                          // ID do jogo em processo de escrita no banco
+  savedGamesRemaining: number                          // Quota disponível para o utilizador
+  isLoggedIn: boolean                                  // Flag de controlo de sessão
 }
 
 /* =============================================================================
  * COMPONENTE: GamesList
- * Renderiza um grid de GameCard
+ * Renderiza um grid responsivo de GameCards injetando o contexto de autenticação.
  * ============================================================================= */
 export default function GamesList({
   games,
@@ -29,18 +32,25 @@ export default function GamesList({
   onSaveGame,
   savingGameId,
   savedGamesRemaining,
+  isLoggedIn,
 }: GamesListProps) {
+  
+  // Early return para evitar renderização desnecessária caso a lista esteja vazia
+  if (!games || games.length === 0) return null;
+
   return (
+    /* Mantemos rigorosamente o grid original de 2 colunas para desktop */
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {games.map((game, index) => (
         <GameCard
-          key={index}
+          key={`game-card-${index}`} // Chave baseada em índice para estabilidade da lista gerada
           game={game}
           type={type}
           index={index}
           onSaveGame={onSaveGame}
           saving={savingGameId === index}
           savedGamesRemaining={savedGamesRemaining}
+          isLoggedIn={isLoggedIn} // REQUISITO: Repasse da flag para o redirecionamento
         />
       ))}
     </div>
@@ -48,5 +58,9 @@ export default function GamesList({
 }
 
 /* =============================================================================
- * FIM DO ARQUIVO
+ * DOCUMENTAÇÃO DE IMPLEMENTAÇÃO:
+ * 1. O componente recebe 'isLoggedIn' do GeneratorPanel.
+ * 2. Cada GameCard agora possui autonomia para decidir se exibe o botão "Salvar" 
+ * ou o botão "Entrar" (redirecionamento).
+ * 3. O índice mapeado garante que o spinner de 'saving' apareça no card correto.
  * ============================================================================= */
