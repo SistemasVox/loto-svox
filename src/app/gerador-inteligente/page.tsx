@@ -1,8 +1,6 @@
 /* =============================================================================
  * ARQUIVO: src/app/gerador-inteligente/page.tsx
- * VERSÃO: 5.6.0 (Produção - Integridade Total e Bloqueio de Duplicidade)
- * DESCRIÇÃO: Orquestrador da página. Gerencia estados de análise, autenticação,
- * turbo e a lógica de limites. Resolve TypeErrors e duplicidade de jogos.
+ * VERSÃO: 6.0.0 (Implementação de Controle de Lote Dinâmico)
  * ============================================================================= */
 
 "use client";
@@ -23,7 +21,6 @@ import AlertModal from "@/components/ui/AlertModal";
 import TurboResultadosModal from "@/components/ui/TurboResultadosModal";
 import InputModal from "@/components/ui/InputModal";
 
-// Utilitário de Hierarquia de Planos
 export function hasAccessToResource(
   userPlan: "free" | "basic" | "plus" | "premium",
   requiredPlan: GeneratorType
@@ -32,14 +29,11 @@ export function hasAccessToResource(
   return planHierarchy.indexOf(userPlan) >= planHierarchy.indexOf(requiredPlan);
 }
 
-// Hook de Som Original com Blobs
 const useBlobSound = (soundPath: string) => {
   const [play, setPlay] = useState<() => void>(() => () => {});
   const [userInteracted, setUserInteracted] = useState(false);
 
-  const handleInteraction = useCallback(() => {
-    setUserInteracted(true);
-  }, []);
+  const handleInteraction = useCallback(() => { setUserInteracted(true); }, []);
 
   useEffect(() => {
     window.addEventListener('click', handleInteraction);
@@ -68,12 +62,10 @@ const useBlobSound = (soundPath: string) => {
             audio.play().catch(e => console.error("Erro áudio:", e));
           }
         });
-      } catch (error) { console.error("Erro ao carregar áudio:", error); }
+      } catch (error) { console.error("Erro áudio:", error); }
     };
     loadSound();
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
   }, [soundPath, userInteracted]);
   return { play };
 };
@@ -94,7 +86,6 @@ export default function GeradorInteligentePage() {
   const { isLoggedIn, user } = useAuth();
   const gameGen = useGameGenerator();
 
-  // --- Estados de Dados ---
   const [activeTab, setActiveTab] = useState<GeneratorType>("free");
   const [historicos, setHistoricos] = useState<ResultadoHistorico[]>([]);
   const [frequencias, setFrequencias] = useState<any[]>([]);
@@ -103,13 +94,14 @@ export default function GeradorInteligentePage() {
   const [subscriptionPlan, setSubscriptionPlan] = useState<"free" | "basic" | "plus" | "premium">("free");
   const [currentConcurso, setCurrentConcurso] = useState<number | null>(null);
 
-  // --- Estados de Jogos Salvos (Bloqueio de Duplicidade) ---
+  // NOVO ESTADO: Controle de Quantidade de Lote
+  const [batchQuantity, setBatchQuantity] = useState<number>(0);
+
   const [savedGames, setSavedGames] = useState<any[]>([]);
   const [savedGamesRemaining, setSavedGamesRemaining] = useState(0);
   const [savingGameId, setSavingGameId] = useState<number | null>(null);
   const [showDuplicateAlert, setShowDuplicateAlert] = useState(false);
 
-  // --- Estados Turbo e Modais ---
   const [turboUsages, setTurboUsages] = useState(0);
   const [turboLimit, setTurboLimit] = useState(1);
   const [loadingTurbo, setLoadingTurbo] = useState(false);
@@ -122,7 +114,6 @@ export default function GeradorInteligentePage() {
 
   const { play: playHoverSound } = useBlobSound("/sounds/beep-1.mp3");
 
-  // Inicialização de Dados
   useEffect(() => {
     async function init() {
       setLoadingData(true);
@@ -160,23 +151,24 @@ export default function GeradorInteligentePage() {
     init();
   }, [isLoggedIn, activeTab]);
 
-  /**
-   * LÓGICA DE SALVAMENTO COM BLOQUEIO DE DUPLICATAS
-   * Resolve o erro de duplicidade e o TypeError usando useCallback
-   */
+  const activeGames = gameGen.batches[activeTab] || [];
+  const hasAccess = hasAccessToResource(subscriptionPlan, activeTab);
+  const gamesRemaining = hasAccess ? GENERATION_LIMITS[activeTab] - activeGames.length : 0;
+
+  // REQUISITO: Sincronização automática do valor padrão do lote
+  useEffect(() => {
+    setBatchQuantity(Math.max(0, gamesRemaining));
+  }, [gamesRemaining]);
+
   const handleSaveGame = useCallback(async (gameNumbers: number[], gameId: number) => {
     if (!isLoggedIn) { router.push("/login"); return; }
     if (savedGamesRemaining <= 0) { alert("Limite de salvamento atingido!"); return; }
     if (currentConcurso === null) return;
 
-    // Verificação de Duplicidade (Signature check)
     const signature = [...gameNumbers].sort((a, b) => a - b).join(",");
     const isDup = savedGames.some(g => [...g.numbers].sort((a, b) => a - b).join(",") === signature);
     
-    if (isDup) {
-      setShowDuplicateAlert(true);
-      return;
-    }
+    if (isDup) { setShowDuplicateAlert(true); return; }
 
     setSavingGameId(gameId);
     try {
@@ -194,22 +186,17 @@ export default function GeradorInteligentePage() {
     } catch (e) { console.error(e); } finally { setSavingGameId(null); }
   }, [isLoggedIn, savedGames, savedGamesRemaining, currentConcurso, router]);
 
-  const activeGames = gameGen.batches[activeTab] || [];
-  const hasAccess = hasAccessToResource(subscriptionPlan, activeTab);
-  const gamesRemaining = hasAccess ? GENERATION_LIMITS[activeTab] - activeGames.length : 0;
-
-  // Handlers de Geração
   const handleGenerateSingle = () => {
     if (!hasAccess || gamesRemaining <= 0) return;
     gameGen.addGame(activeTab, activeGames, atrasados, frequencias);
   };
 
+  // REQUISITO: Geração com quantidade definida pelo usuário
   const handleGenerateBatch = () => {
-    if (!hasAccess || gamesRemaining <= 0) return;
-    gameGen.generateBatch(activeTab, gamesRemaining, activeGames, atrasados, frequencias);
+    if (!hasAccess || gamesRemaining <= 0 || batchQuantity <= 0) return;
+    gameGen.generateBatch(activeTab, batchQuantity, activeGames, atrasados, frequencias);
   };
 
-  // Handlers Turbo e Premium Analysis
   const handleTurbo = async () => {
     if (!isLoggedIn) { router.push("/login"); return; }
     setLoadingTurbo(true);
@@ -250,9 +237,6 @@ export default function GeradorInteligentePage() {
 
   const showLoading = useLoadingDelay(loadingData);
 
-  /* -----------------------------------------------------------------------------
-   * REQUISITO: ECRÃ DE CARREGAMENTO (DESIGN ORIGINAL)
-   * ----------------------------------------------------------------------------- */
   if (showLoading) {
     return (
       <div className="flex flex-col justify-center items-center min-h-[60vh] px-4 bg-black">
@@ -296,6 +280,9 @@ export default function GeradorInteligentePage() {
         turboUsages={turboUsages}
         turboLimit={turboLimit}
         loadingTurbo={loadingTurbo}
+        // NOVAS PROPS PARA FLEXIBILIDADE DE LOTE
+        batchQuantity={batchQuantity}
+        setBatchQuantity={setBatchQuantity}
       />
 
       <UpgradeModal isOpen={showUpgradeModal} onClose={() => setShowUpgradeModal(false)} onUpgrade={() => router.push("/minha-conta/assinaturas")} targetPlan={targetPlan} />
