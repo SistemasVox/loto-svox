@@ -1,7 +1,8 @@
 /* =============================================================================
  * ARQUIVO: src/components/gerador/GeneratorPanel.tsx
- * VERSÃO: 4.0.0 (Etapa 3 - Controle de Lote com Recalibração Animada)
- * DESCRIÇÃO: Painel de controle final com suporte a ajuste dinâmico de lote.
+ * VERSÃO: 4.1.0 (UX Final - Controle de Lote e Intutitividade)
+ * DESCRIÇÃO: Painel de controle com slider de carga, animação de recalibração
+ * e botões com rótulos explícitos para máxima usabilidade.
  * ============================================================================= */
 
 import React, { useState, useEffect } from 'react'
@@ -27,8 +28,7 @@ export default function GeneratorPanel(props: any) {
     handleClearBatch, isLoggedIn, onButtonHover, savedGamesRemaining,
     onSaveGame, savingGameId, onTurbo, turboUsages, turboLimit, loadingTurbo,
     turboDisabled,
-    // NOVAS PROPS DA ETAPA 2
-    batchQuantity, setBatchQuantity
+    batchQuantity, setBatchQuantity 
   } = props;
 
   const [showTurboModal, setShowTurboModal] = useState(false);
@@ -36,7 +36,7 @@ export default function GeneratorPanel(props: any) {
   const [renderGames, setRenderGames] = useState(false);
   const [internalProgress, setInternalProgress] = useState(0);
   
-  // ESTADO DE ANIMAÇÃO DE RECALIBRAÇÃO (ETAPA 3)
+  // ESTADO DE ANIMAÇÃO DE RECALIBRAÇÃO
   const [isCalibrating, setIsCalibrating] = useState(false);
 
   const regraTurbo = TURBO_RULES[activeTab] || { label: "Turbo", desc: "Restrito." };
@@ -136,7 +136,6 @@ export default function GeneratorPanel(props: any) {
             <FaPlus /> ADICIONAR_
           </button>
 
-          {/* BOTÃO DINÂMICO: Mostra a quantidade escolhida */}
           <button 
             onClick={handleGenerateBatch} 
             disabled={isLimitReached || loading || batchGenerating || batchQuantity <= 0}
@@ -168,10 +167,9 @@ export default function GeneratorPanel(props: any) {
           <button 
             onClick={handleClearBatch} 
             onMouseEnter={onButtonHover}
-            className="p-4 bg-[#050505] text-red-500 border border-red-500/30 rounded-2xl transition-all active:scale-95 hover:border-red-500/60"
-            title="LIMPAR LOTE"
+            className="flex items-center gap-3 px-6 py-4 bg-[#050505] text-red-500 border border-red-500/30 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] transition-all active:scale-95 hover:border-red-500/60 shadow-[0_0_20px_rgba(239,68,68,0.05)]"
           >
-            <FaTrash />
+            <FaTrash /> LIMPAR_LOTE
           </button>
         </div>
       </div>
